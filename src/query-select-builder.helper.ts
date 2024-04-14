@@ -164,8 +164,9 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return "v" + this.variableCounter++;
   }
   getNewAlias(tableName?: string) {
-    const alias = tableName || "a";
-    return alias + "_" + this.aliasCounter++;
+    return [tableName, "alias", (this.aliasCounter++).toString()]
+      .filter((el) => el)
+      .join("_");
   }
   getAlias(path: string[], tableName: string) {
     const key = path.join(".");
