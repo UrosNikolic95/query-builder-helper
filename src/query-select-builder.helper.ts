@@ -88,17 +88,28 @@ class NodeHelper implements NodeData {
         association: `${this.previousNode.alias}.${this.field}`,
         alias: this.alias,
         joinType: this.functionData.joinType,
+        conditions: [],
       };
     }
   }
 
   addJoinConditions(joinConditions: string[]) {
     const filteredJoinConditions = joinConditions?.filter((el) => el);
-    if (filteredJoinConditions?.length)
-      this.associations[this.alias].conditions =
-        "(" +
-        filteredJoinConditions.join(" " + this.functionData.operator + " ") +
-        ")";
+    if (filteredJoinConditions?.length && this.functionData.joinCondition) {
+      if (filteredJoinConditions.length > 1) {
+        this.associations[this.alias].conditions.push(
+          "(" +
+            filteredJoinConditions.join(
+              " " + this.functionData.operator + " "
+            ) +
+            ")"
+        );
+      } else if (filteredJoinConditions.length == 1) {
+        this.associations[this.alias].conditions.push(
+          ...filteredJoinConditions
+        );
+      }
+    }
   }
 
   addCondition() {
@@ -126,7 +137,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
       joinType: string;
       association?: string;
       alias?: string;
-      conditions?: string;
+      conditions?: string[];
     };
   } = {};
   variableCounter: number = 0;
@@ -227,31 +238,36 @@ export class QuerySelectBuilderHelper<T extends Object> {
     });
   }
 
-  getMany() {
+  getQueryBuilder() {
     const rootAlias = this.getAlias([rootLabel]);
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillQueryBuilder(qb);
+    return qb;
+  }
+
+  getMany() {
+    const qb = this.getQueryBuilder();
     return qb.getMany();
   }
 
   fillQueryBuilder(qb: SelectQueryBuilder<T>) {
     Object.values(this.associations).forEach((associaation) => {
       if (associaation.joinType == "left") {
-        if (associaation.conditions) {
+        if (associaation.conditions.length) {
           qb.leftJoinAndSelect(
             associaation.association,
             associaation.alias,
-            associaation.conditions
+            associaation.conditions.join(" OR ")
           );
         } else {
           qb.leftJoinAndSelect(associaation.association, associaation.alias);
         }
       } else if (associaation.joinType == "inner") {
-        if (associaation.conditions) {
+        if (associaation.conditions.length) {
           qb.innerJoinAndSelect(
             associaation.association,
             associaation.alias,
-            associaation.conditions
+            associaation.conditions.join(" OR ")
           );
         } else {
           qb.innerJoinAndSelect(associaation.association, associaation.alias);

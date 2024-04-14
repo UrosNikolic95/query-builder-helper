@@ -39,6 +39,8 @@ async function main() {
 
   const data = await qb.getMany();
 
+  console.log(qb.getQueryBuilder().getQuery());
+
   console.log(data);
 
   await dataSource.destroy();
