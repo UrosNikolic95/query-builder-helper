@@ -33,7 +33,13 @@ async function main() {
 
   qb.addLeftJoinAnd({
     test_2: {
-      field: "v1",
+      field: "v2",
+    },
+  });
+
+  qb.addExclude({
+    test_2: {
+      field: "v2",
     },
   });
 

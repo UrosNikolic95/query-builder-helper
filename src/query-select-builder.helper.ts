@@ -238,10 +238,53 @@ export class QuerySelectBuilderHelper<T extends Object> {
     });
   }
 
+  fillExclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
+    if (this.exclude_val) {
+      qb.leftJoin(
+        (qb: SelectQueryBuilder<any>) => {
+          const rootAlias = this.exclude.getAlias([rootLabel]);
+          const qb2 = qb.from(this.repo.target, rootAlias);
+          const helper = this.exclude.fillQueryBuilder(qb2);
+          helper.select(
+            this.repo.metadata.columns
+              .filter((el) => el.isPrimary)
+              .map(
+                (el) => `${rootAlias}.${el.propertyName}  as ${el.propertyName}`
+              )
+              .join(", ")
+          );
+          this.repo.metadata.columns.forEach((el) => {
+            if (el.isPrimary) {
+              helper.addGroupBy(`${rootAlias}.${el.propertyName}`);
+            }
+          });
+          return helper;
+        },
+        "exclude",
+        this.repo.metadata.columns
+          .filter((el) => el.isPrimary)
+          .map(
+            (el) =>
+              `exclude.${el.propertyName} = ${rootAlias}.${el.propertyName}`
+          )
+          .join(" and ")
+      );
+    }
+    qb.andWhere(
+      "(" +
+        this.repo.metadata.columns
+          .filter((el) => el.isPrimary)
+          .map((el) => `exclude.${el.propertyName} is null`)
+          .join(" and ") +
+        ")"
+    );
+  }
+
   getQueryBuilder() {
     const rootAlias = this.getAlias([rootLabel]);
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillQueryBuilder(qb);
+    this.fillExclude(qb, rootAlias);
     return qb;
   }
 
