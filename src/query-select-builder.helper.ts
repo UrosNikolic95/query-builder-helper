@@ -4,7 +4,7 @@ type Flatten<T> = T2<T1<T>>;
 type T1<T> = T extends Array<infer V> ? T1<V> : T;
 type T2<T> = T extends Object
   ? {
-      [key in keyof T]?: T2<T1<T[key]>>;
+      [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>>>;
     }
   : T;
 
@@ -15,13 +15,7 @@ interface NodeData {
   alias?: string;
   field?: string;
   entityMetadata?: EntityMetadata;
-  functionData: {
-    queryBuilderHelper: QuerySelectBuilderHelper<any>;
-    operator: "AND" | "OR";
-    joinCondition: boolean;
-    joinType: "left" | "inner";
-    condition: string[];
-  };
+  functionData: FunctionData;
 }
 
 interface FunctionData {
@@ -30,6 +24,29 @@ interface FunctionData {
   joinCondition: boolean;
   joinType: "left" | "inner";
   condition: string[];
+}
+
+export class Operator<T> {
+  constructor(
+    readonly value: T,
+    readonly func: (fieldAlias: string, variableName: string) => string
+  ) {}
+
+  static ILike(val: string) {
+    return new Operator(val, (a, vn) => `${a} ilike :${vn}`);
+  }
+
+  static In(val: any[]) {
+    return new Operator(val, (a, vn) => `${a} in (:...${vn})`);
+  }
+
+  static IsNull() {
+    return new Operator(null, (a, vn) => `${a} is null`);
+  }
+
+  static IsNotNull() {
+    return new Operator(null, (a, vn) => `${a} is not null`);
+  }
 }
 
 class NodeHelper implements NodeData {
@@ -44,7 +61,8 @@ class NodeHelper implements NodeData {
   get isSubObject() {
     return (
       typeof this.currentValue == "object" &&
-      !(this.currentValue instanceof Date)
+      !(this.currentValue instanceof Date) &&
+      !(this.currentValue instanceof Operator)
     );
   }
 
@@ -121,11 +139,20 @@ class NodeHelper implements NodeData {
   addCondition() {
     if (!this.currentValue) return null;
     const variableName = this.getNewVariableName();
-    this.variables[variableName] = this.currentValue;
-    const cond = `${this.previousNode.alias}.${this.field} = :${variableName}`;
-    if (!this.functionData?.joinCondition)
-      this.functionData.condition.push(cond);
-    return cond;
+    const alias = `${this.previousNode.alias}.${this.field}`;
+    if (this.currentValue instanceof Operator) {
+      this.variables[variableName] = this.currentValue?.value;
+      const cond = this.currentValue.func(alias, variableName);
+      if (!this.functionData?.joinCondition)
+        this.functionData.condition.push(cond);
+      return cond;
+    } else {
+      this.variables[variableName] = this.currentValue;
+      const cond = `${alias} = :${variableName}`;
+      if (!this.functionData?.joinCondition)
+        this.functionData.condition.push(cond);
+      return cond;
+    }
   }
 }
 
@@ -254,36 +281,34 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
 
   fillExclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
-    if (this.exclude_val) {
-      qb.leftJoin(
-        (qb: SelectQueryBuilder<any>) => {
-          const rootAlias = this.exclude.getAlias(
-            [rootLabel],
-            this.repo.metadata.tableName
-          );
-          const qb2 = qb.from(this.repo.target, rootAlias);
-          const helper = this.exclude.fillQueryBuilder(qb2);
-          helper.select(
-            this.primaryColumns
-              .map(
-                (el) => `${rootAlias}.${el.propertyName}  as ${el.propertyName}`
-              )
-              .join(", ")
-          );
-          this.primaryColumns.forEach((el) => {
-            helper.addGroupBy(`${rootAlias}.${el.propertyName}`);
-          });
-          return helper;
-        },
-        "exclude",
-        this.primaryColumns
-          .map(
-            (el) =>
-              `exclude.${el.propertyName} = ${rootAlias}.${el.propertyName}`
-          )
-          .join(" and ")
-      );
-    }
+    if (!this.exclude_val) return;
+    qb.leftJoin(
+      (qb: SelectQueryBuilder<any>) => {
+        const rootAlias = this.exclude.getAlias(
+          [rootLabel],
+          this.repo.metadata.tableName
+        );
+        const qb2 = qb.from(this.repo.target, rootAlias);
+        const helper = this.exclude.fillQueryBuilder(qb2);
+        helper.select(
+          this.primaryColumns
+            .map(
+              (el) => `${rootAlias}.${el.propertyName}  as ${el.propertyName}`
+            )
+            .join(", ")
+        );
+        this.primaryColumns.forEach((el) => {
+          helper.addGroupBy(`${rootAlias}.${el.propertyName}`);
+        });
+        return helper;
+      },
+      "exclude",
+      this.primaryColumns
+        .map(
+          (el) => `exclude.${el.propertyName} = ${rootAlias}.${el.propertyName}`
+        )
+        .join(" and ")
+    );
     qb.andWhere(
       "(" +
         this.repo.metadata.columns

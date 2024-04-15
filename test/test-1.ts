@@ -1,5 +1,8 @@
 import { DataSource } from "typeorm";
-import { QuerySelectBuilderHelper } from "../src/query-select-builder.helper";
+import {
+  Operator,
+  QuerySelectBuilderHelper,
+} from "../src/query-select-builder.helper";
 import { Test1Entity } from "./entities/test-1.entity";
 import { Test2Entity } from "./entities/test-2.entity";
 import { Test3Entity } from "./entities/test-3.entity";
@@ -31,15 +34,20 @@ async function main() {
     dataSource.getRepository(Test1Entity)
   );
 
-  qb.addLeftJoinAnd({
-    test_2: {
-      field: "v2",
-    },
-  });
+  // qb.addLeftJoinAnd({
+  //   test_2: {
+  //     field: "v2",
+  //     test_1: {
+  //       test_2: {
+  //         field: "v1",
+  //       },
+  //     },
+  //   },
+  // });
 
-  qb.addExclude({
+  qb.addAnd({
     test_2: {
-      field: "v2",
+      field: Operator.ILike("%2%"),
     },
   });
 
