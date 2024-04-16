@@ -14,6 +14,9 @@ interface NodeData {
   currentPath: string[];
   alias?: string;
   field?: string;
+  isRelation?: boolean;
+  isColumn?: boolean;
+  isRoot?: boolean;
   entityMetadata?: EntityMetadata;
   functionData: FunctionData;
 }
@@ -47,6 +50,22 @@ export class Operator<T> {
   static IsNotNull() {
     return new Operator(null, (a, vn) => `${a} is not null`);
   }
+
+  static GreaterThan(val: any) {
+    return new Operator(val, (a, vn) => `${a} > :${vn}`);
+  }
+
+  static GreaterThanOrEqualTo(val: any) {
+    return new Operator(val, (a, vn) => `${a} >= :${vn}`);
+  }
+
+  static LessThan(val: any) {
+    return new Operator(val, (a, vn) => `${a} < :${vn}`);
+  }
+
+  static LessThanOrEqualTo(val: any) {
+    return new Operator(val, (a, vn) => `${a} <= :${vn}`);
+  }
 }
 
 class NodeHelper implements NodeData {
@@ -55,21 +74,16 @@ class NodeHelper implements NodeData {
   currentPath: string[];
   alias?: string;
   field?: string;
+  isRelation?: boolean;
+  isColumn?: boolean;
+  isRoot?: boolean;
   entityMetadata?: EntityMetadata;
   functionData: FunctionData;
-
-  get isSubObject() {
-    return (
-      typeof this.currentValue == "object" &&
-      !(this.currentValue instanceof Date) &&
-      !(this.currentValue instanceof Operator)
-    );
-  }
 
   constructor(nodeData: NodeData) {
     Object.assign(this, nodeData);
     this.alias =
-      !nodeData.alias && this.isSubObject
+      !nodeData.alias && (this.isRelation || this.isRoot)
         ? nodeData.functionData.queryBuilderHelper.getAlias(
             nodeData.currentPath,
             this.entityMetadata.tableName
@@ -84,6 +98,12 @@ class NodeHelper implements NodeData {
       entityMetadata: this.entityMetadata?.relations?.find(
         (el) => el.propertyName == field
       )?.inverseEntityMetadata,
+      isColumn: Boolean(
+        this.entityMetadata?.columns?.find((el) => el.propertyName == field)
+      ),
+      isRelation: Boolean(
+        this.entityMetadata?.relations?.find((el) => el.propertyName == field)
+      ),
       currentValue: this.currentValue[field],
       currentPath: [...this.currentPath, field],
       functionData: this.functionData,
@@ -208,6 +228,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
         currentValue: conditions,
         currentPath: [rootLabel],
         entityMetadata: this.repo.metadata,
+        isRoot: true,
         functionData: {
           queryBuilderHelper: this,
           operator: "AND",
@@ -227,6 +248,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
         currentValue: conditions,
         currentPath: [rootLabel],
         entityMetadata: this.repo.metadata,
+        isRoot: true,
         functionData: {
           queryBuilderHelper: this,
           operator: "AND",
@@ -266,7 +288,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
   addConditionsRecursively(currentNode: NodeHelper) {
     return currentNode.keys.map((field) => {
       const nextNode = currentNode.getNext(field);
-      if (nextNode.isSubObject) {
+      if (nextNode.isRelation) {
         nextNode.addJoin();
         const joinConditions = this.addConditionsRecursively(nextNode);
         nextNode.addJoinConditions(joinConditions);
