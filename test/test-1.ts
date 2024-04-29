@@ -50,6 +50,15 @@ async function main() {
       field: Operator.ILike("%2%"),
     },
   });
+  qb.addOrderBy([
+    {
+      path: (el) => el.test_2.id,
+      order: "DESC",
+    },
+    {
+      path: (el) => el.id,
+    },
+  ]);
 
   const data = await qb.getMany();
 

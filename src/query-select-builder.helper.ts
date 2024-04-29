@@ -2,15 +2,13 @@ import { EntityMetadata, Repository, SelectQueryBuilder } from "typeorm";
 
 type Flatten<T> = T2<T1<T>>;
 type T1<T> = T extends Array<infer V> ? T1<V> : T;
-type T2<T> = T extends Object
-  ? {
-      [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>>>;
-    }
-  : T;
+type T2<T> = {
+  [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>>>;
+};
 
 interface NodeData {
   previousNode?: NodeData;
-  currentValue: any;
+  currentValue?: any;
   currentPath: string[];
   alias?: string;
   field?: string;
@@ -18,7 +16,7 @@ interface NodeData {
   isColumn?: boolean;
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
-  functionData: FunctionData;
+  functionData?: FunctionData;
   skip?: number;
   take?: number;
 }
@@ -28,7 +26,7 @@ interface FunctionData {
   operator: "AND" | "OR";
   joinCondition: boolean;
   joinType: "left" | "inner";
-  condition: string[];
+  condition?: string[];
 }
 
 export class Operator<T> {
@@ -72,7 +70,7 @@ export class Operator<T> {
 
 class NodeHelper implements NodeData {
   previousNode?: NodeData;
-  currentValue: any;
+  currentValue?: any;
   currentPath: string[];
   alias?: string;
   field?: string;
@@ -93,6 +91,28 @@ class NodeHelper implements NodeData {
         : null;
   }
 
+  static getRoot(data: {
+    queryBuilderHelper: QuerySelectBuilderHelper<any>;
+    currentValue?: any;
+    operator?: "AND" | "OR";
+    joinType?: "left" | "inner";
+    joinCondition?: boolean;
+  }) {
+    return new NodeHelper({
+      currentValue: data.currentValue,
+      currentPath: [rootLabel],
+      entityMetadata: data.queryBuilderHelper.repo.metadata,
+      isRoot: true,
+      functionData: {
+        queryBuilderHelper: data.queryBuilderHelper,
+        operator: data?.operator,
+        joinCondition: data?.joinCondition,
+        joinType: data?.joinType,
+        condition: [],
+      },
+    });
+  }
+
   getNext(field: string) {
     return new NodeHelper({
       previousNode: this,
@@ -106,7 +126,7 @@ class NodeHelper implements NodeData {
       isRelation: Boolean(
         this.entityMetadata?.relations?.find((el) => el.propertyName == field)
       ),
-      currentValue: this.currentValue[field],
+      currentValue: this.currentValue?.[field],
       currentPath: [...this.currentPath, field],
       functionData: this.functionData,
     });
@@ -180,6 +200,18 @@ class NodeHelper implements NodeData {
 
 const rootLabel = "root";
 
+function getPath<T>(get: (el: T) => any) {
+  const str: string[] = [];
+  const proxy = new Proxy({} as any, {
+    get(obj, property: string, context) {
+      str.push(property);
+      return context;
+    },
+  });
+  get(proxy);
+  return str;
+}
+
 export class QuerySelectBuilderHelper<T extends Object> {
   aliases: {
     [key: string]: string;
@@ -202,6 +234,11 @@ export class QuerySelectBuilderHelper<T extends Object> {
   skipField?: number;
   takeField?: number;
   pageField?: number;
+  order: {
+    alias: string;
+    order?: "ASC" | "DESC";
+    nulls?: "NULLS FIRST" | "NULLS LAST";
+  }[] = [];
 
   get exclude() {
     if (!this.exclude_val) {
@@ -220,6 +257,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
       .filter((el) => el)
       .join("_");
   }
+
   getAlias(path: string[], tableName: string) {
     const key = path.join(".");
     if (!this.aliases[key]) this.aliases[key] = this.getNewAlias(tableName);
@@ -372,6 +410,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.fillExclude(qb, rootAlias);
     if (this.skipField) return qb.skip(this.skipField);
     if (this.takeField) return qb.take(this.takeField);
+    return qb;
   }
 
   getMany() {
@@ -421,7 +460,38 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.conditions.forEach((el) => {
       qb.andWhere(el);
     });
+    this.order.forEach((el) => {
+      qb.addOrderBy(el.alias, el.order, el.nulls);
+    });
     qb.setParameters(this.variables);
     return qb;
+  }
+
+  addOrderBy(
+    data: {
+      path: (el: T) => any;
+      order?: "ASC" | "DESC";
+      nulls?: "NULLS FIRST" | "NULLS LAST";
+    }[]
+  ) {
+    const root = NodeHelper.getRoot({
+      queryBuilderHelper: this,
+    });
+    this.order = data.map((order) => {
+      const path = getPath(order.path);
+      let node = root;
+      console.log({ path });
+      const last = path?.[path.length - 1];
+      path.slice(0, -1).forEach((field) => {
+        node = node.getNext(field);
+        if (node.isRelation) node.addJoin();
+      });
+      return {
+        alias: `${node.alias}.${last}`,
+        order: order?.order,
+        nulls: order?.nulls,
+      };
+    });
+    console.log({ order: this.order });
   }
 }
