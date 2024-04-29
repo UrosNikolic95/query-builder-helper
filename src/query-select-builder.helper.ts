@@ -19,6 +19,8 @@ interface NodeData {
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
   functionData: FunctionData;
+  skip?: number;
+  take?: number;
 }
 
 interface FunctionData {
@@ -197,6 +199,9 @@ export class QuerySelectBuilderHelper<T extends Object> {
   aliasCounter: number = 0;
   conditions: string[] = [];
   exclude_val: QuerySelectBuilderHelper<T> = null;
+  skipField?: number;
+  takeField?: number;
+  pageField?: number;
 
   get exclude() {
     if (!this.exclude_val) {
@@ -219,6 +224,25 @@ export class QuerySelectBuilderHelper<T extends Object> {
     const key = path.join(".");
     if (!this.aliases[key]) this.aliases[key] = this.getNewAlias(tableName);
     return this.aliases[key];
+  }
+
+  skip(num: number) {
+    this.skipField = num;
+  }
+
+  take(num: number) {
+    this.takeField = num;
+    this.setSkip();
+  }
+
+  private setSkip() {
+    if (this.takeField && this.pageField)
+      this.skipField = (this.pageField - 1) * this.takeField;
+  }
+
+  page(num: number) {
+    this.pageField = num;
+    this.setSkip();
   }
 
   addAnd(conditions: Flatten<T>) {
@@ -346,12 +370,28 @@ export class QuerySelectBuilderHelper<T extends Object> {
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillQueryBuilder(qb);
     this.fillExclude(qb, rootAlias);
-    return qb;
+    if (this.skipField) return qb.skip(this.skipField);
+    if (this.takeField) return qb.skip(this.takeField);
   }
 
   getMany() {
     const qb = this.getQueryBuilder();
     return qb.getMany();
+  }
+
+  getManyAndCount() {
+    const qb = this.getQueryBuilder();
+    return qb.getManyAndCount();
+  }
+
+  async getPaginated() {
+    const [items, count] = await this.getManyAndCount();
+    return {
+      count,
+      limit: this.takeField,
+      page: this.pageField,
+      items,
+    };
   }
 
   fillQueryBuilder(qb: SelectQueryBuilder<T>) {
