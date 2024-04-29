@@ -371,7 +371,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.fillQueryBuilder(qb);
     this.fillExclude(qb, rootAlias);
     if (this.skipField) return qb.skip(this.skipField);
-    if (this.takeField) return qb.skip(this.takeField);
+    if (this.takeField) return qb.take(this.takeField);
   }
 
   getMany() {
