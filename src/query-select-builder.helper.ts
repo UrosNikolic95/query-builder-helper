@@ -480,7 +480,6 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.order = data.map((order) => {
       const path = getPath(order.path);
       let node = root;
-      console.log({ path });
       const last = path?.[path.length - 1];
       path.slice(0, -1).forEach((field) => {
         node = node.getNext(field);
@@ -492,6 +491,5 @@ export class QuerySelectBuilderHelper<T extends Object> {
         nulls: order?.nulls,
       };
     });
-    console.log({ order: this.order });
   }
 }
