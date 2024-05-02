@@ -26,14 +26,18 @@ interface FunctionData {
   operator: "AND" | "OR";
   joinCondition: boolean;
   joinType: "left" | "inner";
-  condition?: string[];
+  conditions?: string[];
 }
 
 export class Operator<T> {
   constructor(
     readonly value: T,
-    readonly func: (fieldAlias: string, variableName: string) => string
+    readonly stringMaker: (fieldAlias: string, variableName: string) => string
   ) {}
+
+  static Equals(val: any) {
+    return new Operator(val, (a, vn) => `${a} = :${vn}`);
+  }
 
   static ILike(val: string) {
     return new Operator(val, (a, vn) => `${a} ilike :${vn}`);
@@ -73,6 +77,7 @@ class NodeHelper implements NodeData {
   currentValue?: any;
   currentPath: string[];
   alias?: string;
+  fieldAlias?: string;
   field?: string;
   isRelation?: boolean;
   isColumn?: boolean;
@@ -83,11 +88,15 @@ class NodeHelper implements NodeData {
   constructor(nodeData: NodeData) {
     Object.assign(this, nodeData);
     this.alias =
-      !nodeData.alias && (this.isRelation || this.isRoot)
+      !this.alias && (this.isRelation || this.isRoot)
         ? nodeData.functionData.queryBuilderHelper.getAlias(
             nodeData.currentPath,
             this.entityMetadata.tableName
           )
+        : null;
+    this.fieldAlias =
+      !this.fieldAlias && this.previousNode?.alias && this.field
+        ? `${this.previousNode?.alias}.${this.field}`
         : null;
   }
 
@@ -108,7 +117,7 @@ class NodeHelper implements NodeData {
         operator: data?.operator,
         joinCondition: data?.joinCondition,
         joinType: data?.joinType,
-        condition: [],
+        conditions: [],
       },
     });
   }
@@ -151,7 +160,7 @@ class NodeHelper implements NodeData {
   addJoin() {
     if (!this.associations[this.alias]) {
       this.associations[this.alias] = {
-        association: `${this.previousNode.alias}.${this.field}`,
+        association: this.fieldAlias,
         alias: this.alias,
         joinType: this.functionData.joinType,
         conditions: [],
@@ -178,23 +187,30 @@ class NodeHelper implements NodeData {
     }
   }
 
+  getOperator(currentValue: any) {
+    if (currentValue instanceof Operator) return currentValue;
+    return Operator.Equals(currentValue);
+  }
+
   addCondition() {
     if (!this.currentValue) return null;
     const variableName = this.getNewVariableName();
-    const alias = `${this.previousNode.alias}.${this.field}`;
-    if (this.currentValue instanceof Operator) {
-      this.variables[variableName] = this.currentValue?.value;
-      const cond = this.currentValue.func(alias, variableName);
-      if (!this.functionData?.joinCondition)
-        this.functionData.condition.push(cond);
-      return cond;
-    } else {
-      this.variables[variableName] = this.currentValue;
-      const cond = `${alias} = :${variableName}`;
-      if (!this.functionData?.joinCondition)
-        this.functionData.condition.push(cond);
-      return cond;
-    }
+    const op = this.getOperator(this.currentValue);
+    this.variables[variableName] = op?.value;
+    const cond = op.stringMaker(this.fieldAlias, variableName);
+    if (!this.functionData?.joinCondition)
+      this.functionData.conditions.push(cond);
+    return cond;
+  }
+
+  getConditions() {
+    return (
+      "(" +
+      this.functionData.conditions.join(
+        " " + this.functionData.operator + " "
+      ) +
+      ")"
+    );
   }
 }
 
@@ -284,63 +300,42 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
 
   addAnd(conditions: Flatten<T>) {
-    const conditionsStr: string[] = [];
-    this.addConditionsRecursively(
-      new NodeHelper({
-        currentValue: conditions,
-        currentPath: [rootLabel],
-        entityMetadata: this.repo.metadata,
-        isRoot: true,
-        functionData: {
-          queryBuilderHelper: this,
-          operator: "AND",
-          joinCondition: false,
-          joinType: "left",
-          condition: conditionsStr,
-        },
-      })
-    );
-    this.conditions.push("(" + conditionsStr.join(" AND ") + ")");
+    const root = NodeHelper.getRoot({
+      currentValue: conditions,
+      queryBuilderHelper: this,
+      operator: "AND",
+      joinType: "left",
+      joinCondition: false,
+    });
+    this.addConditionsRecursively(root);
+    if (root?.functionData?.conditions?.length)
+      this.conditions.push(root.getConditions());
   }
 
   addLeftJoinAnd(conditions: Flatten<T>) {
-    const conditionsStr: string[] = [];
-    this.addConditionsRecursively(
-      new NodeHelper({
-        currentValue: conditions,
-        currentPath: [rootLabel],
-        entityMetadata: this.repo.metadata,
-        isRoot: true,
-        functionData: {
-          queryBuilderHelper: this,
-          operator: "AND",
-          joinCondition: true,
-          joinType: "left",
-          condition: conditionsStr,
-        },
-      })
-    );
-    if (conditionsStr?.length)
-      this.conditions.push("(" + conditionsStr.join(" AND ") + ")");
+    const root = NodeHelper.getRoot({
+      currentValue: conditions,
+      queryBuilderHelper: this,
+      operator: "AND",
+      joinType: "left",
+      joinCondition: true,
+    });
+    this.addConditionsRecursively(root);
+    if (root?.functionData?.conditions?.length)
+      this.conditions.push(root.getConditions());
   }
 
   addOr(conditions: Flatten<T>) {
-    const conditionsStr: string[] = [];
-    this.addConditionsRecursively(
-      new NodeHelper({
-        currentValue: conditions,
-        currentPath: [rootLabel],
-        entityMetadata: this.repo.metadata,
-        functionData: {
-          queryBuilderHelper: this,
-          operator: "OR",
-          joinCondition: false,
-          joinType: "left",
-          condition: conditionsStr,
-        },
-      })
-    );
-    this.conditions.push("(" + conditionsStr.join(" OR ") + ")");
+    const root = NodeHelper.getRoot({
+      currentValue: conditions,
+      queryBuilderHelper: this,
+      operator: "OR",
+      joinType: "left",
+      joinCondition: false,
+    });
+    this.addConditionsRecursively(root);
+    if (root?.functionData?.conditions?.length)
+      this.conditions.push(root.getConditions());
   }
 
   addExclude(conditions: Flatten<T>) {
@@ -395,8 +390,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     );
     qb.andWhere(
       "(" +
-        this.repo.metadata.columns
-          .filter((el) => el.isPrimary)
+        this.primaryColumns
           .map((el) => `exclude.${el.propertyName} is null`)
           .join(" and ") +
         ")"
@@ -404,7 +398,10 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
 
   getQueryBuilder() {
-    const rootAlias = this.getAlias([rootLabel], this.repo.metadata.tableName);
+    const rootAlias = this.getAlias(
+      [rootLabel],
+      this.repo?.metadata?.tableName
+    );
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillQueryBuilder(qb);
     this.fillExclude(qb, rootAlias);

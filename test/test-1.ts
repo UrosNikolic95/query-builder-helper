@@ -34,20 +34,15 @@ async function main() {
     dataSource.getRepository(Test1Entity)
   );
 
-  // qb.addLeftJoinAnd({
-  //   test_2: {
-  //     field: "v2",
-  //     test_1: {
-  //       test_2: {
-  //         field: "v1",
-  //       },
-  //     },
-  //   },
-  // });
+  qb.addLeftJoinAnd({
+    test_2: {
+      field: "qqq",
+    },
+  });
 
   qb.addAnd({
     test_2: {
-      field: Operator.ILike("%2%"),
+      field: Operator.IsNull(),
     },
   });
   qb.addOrderBy([
