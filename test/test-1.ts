@@ -40,6 +40,14 @@ async function main() {
     },
   });
 
+  qb.addExclude({
+    test_2: {
+      test_1: {
+        field: "abcd",
+      },
+    },
+  });
+
   qb.addAnd({
     test_2: {
       field: Operator.IsNull(),

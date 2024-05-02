@@ -359,49 +359,62 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return this.repo.metadata.columns.filter((el) => el.isPrimary);
   }
 
-  fillExclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
-    if (!this.exclude_val) return;
-    qb.leftJoin(
-      (qb: SelectQueryBuilder<any>) => {
-        const rootAlias = this.exclude.getAlias(
-          [rootLabel],
-          this.repo.metadata.tableName
-        );
-        const qb2 = qb.from(this.repo.target, rootAlias);
-        const helper = this.exclude.fillQueryBuilder(qb2);
-        helper.select(
-          this.primaryColumns
-            .map(
-              (el) => `${rootAlias}.${el.propertyName}  as ${el.propertyName}`
-            )
-            .join(", ")
-        );
-        this.primaryColumns.forEach((el) => {
-          helper.addGroupBy(`${rootAlias}.${el.propertyName}`);
-        });
-        return helper;
-      },
-      "exclude",
-      this.primaryColumns
-        .map(
-          (el) => `exclude.${el.propertyName} = ${rootAlias}.${el.propertyName}`
-        )
-        .join(" and ")
-    );
-    qb.andWhere(
+  primaryKeyIsNull(table: string) {
+    return (
       "(" +
-        this.primaryColumns
-          .map((el) => `exclude.${el.propertyName} is null`)
-          .join(" and ") +
-        ")"
+      this.primaryColumns
+        .map((el) => `${table}.${el.propertyName} is null`)
+        .join(" and ") +
+      ")"
     );
   }
 
-  getQueryBuilder() {
-    const rootAlias = this.getAlias(
-      [rootLabel],
-      this.repo?.metadata?.tableName
+  joinByPrimaryKey(tableA: string, tableB: string) {
+    return this.primaryColumns
+      .map(
+        (el) => `${tableA}.${el.propertyName} = ${tableB}.${el.propertyName}`
+      )
+      .join(" and ");
+  }
+
+  selectPrimaryKey(rootAlias: string) {
+    return this.primaryColumns
+      .map((el) => `${rootAlias}.${el.propertyName}  as ${el.propertyName}`)
+      .join(", ");
+  }
+
+  groupByPrimaryKey(rootAlias: string) {
+    return this.primaryColumns
+      .map((el) => {
+        return `${rootAlias}.${el.propertyName}`;
+      })
+      .join(", ");
+  }
+
+  getRootAlias() {
+    return this.getAlias([rootLabel], this.repo.metadata.tableName);
+  }
+
+  fillExclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
+    if (!this.exclude_val) return;
+    const excludedAlias = `excluded`;
+    qb.leftJoin(
+      (qb: SelectQueryBuilder<any>) => {
+        const rootAliasSubQuery = this.exclude.getRootAlias();
+        const qb2 = qb.from(this.repo.target, rootAliasSubQuery);
+        const helper = this.exclude.fillQueryBuilder(qb2);
+        helper.select(this.selectPrimaryKey(rootAliasSubQuery)); // remove previous select
+        helper.groupBy(this.groupByPrimaryKey(rootAliasSubQuery));
+        return helper;
+      },
+      excludedAlias,
+      this.joinByPrimaryKey(excludedAlias, rootAlias)
     );
+    qb.andWhere(this.primaryKeyIsNull(excludedAlias));
+  }
+
+  getQueryBuilder() {
+    const rootAlias = this.getRootAlias();
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillQueryBuilder(qb);
     this.fillExclude(qb, rootAlias);
@@ -464,6 +477,16 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return qb;
   }
 
+  returnLast<T>(root: NodeHelper, get: (el: T) => any) {
+    const path = getPath(get);
+    let node = root;
+    path.forEach((field) => {
+      node = node.getNext(field);
+      if (node.isRelation) node.addJoin();
+    });
+    return node;
+  }
+
   addOrderBy(
     data: {
       path: (el: T) => any;
@@ -475,15 +498,9 @@ export class QuerySelectBuilderHelper<T extends Object> {
       queryBuilderHelper: this,
     });
     this.order = data.map((order) => {
-      const path = getPath(order.path);
-      let node = root;
-      const last = path?.[path.length - 1];
-      path.slice(0, -1).forEach((field) => {
-        node = node.getNext(field);
-        if (node.isRelation) node.addJoin();
-      });
+      let node = this.returnLast(root, order.path);
       return {
-        alias: `${node.alias}.${last}`,
+        alias: node.fieldAlias,
         order: order?.order,
         nulls: order?.nulls,
       };
