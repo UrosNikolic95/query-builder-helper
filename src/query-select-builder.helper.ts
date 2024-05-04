@@ -505,9 +505,12 @@ export class QuerySelectBuilderHelper<T extends Object> {
 
   getUpdateQuery(data: Partial<T>): [string, any[]] {
     const tableName = this.repo.metadata.tableName;
-    const columns = Object.keys(data).filter((key) =>
-      this.repo.metadata.columns.find((column) => column.propertyName == key)
-    );
+    const columns = Object.keys(data)
+      .map((key) =>
+        this.repo.metadata.columns.find((column) => column.propertyName == key)
+      )
+      .filter((columnMetadata) => columnMetadata)
+      .map((columnMetadata) => columnMetadata?.databaseName);
     const rootAlias = this.getRootAlias();
     const updateColumns = columns.map(
       (column) => `${rootAlias}.${column} as ${column}`
@@ -519,7 +522,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
       .addSelect(updateColumns)
       .getQueryAndParameters();
     const setStr = columns
-      .map((key) => `${key} = ${fromAlias}.${key}`)
+      .map((column) => `${column} = ${fromAlias}.${column}`)
       .join(", ");
     const whereStr = this.joinByPrimaryKey(updateAlias, fromAlias);
     return [
