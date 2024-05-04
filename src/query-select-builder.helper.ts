@@ -505,12 +505,14 @@ export class QuerySelectBuilderHelper<T extends Object> {
 
   getUpdateQuery(data: Partial<T>): [string, any[]] {
     const tableName = this.repo.metadata.tableName;
-    const columns = Object.keys(data)
+    const columsMeta = Object.keys(data)
       .map((key) =>
         this.repo.metadata.columns.find((column) => column.propertyName == key)
       )
-      .filter((columnMetadata) => columnMetadata)
-      .map((columnMetadata) => columnMetadata?.databaseName);
+      .filter((columnMetadata) => columnMetadata);
+    const columns = columsMeta.map(
+      (columnMetadata) => columnMetadata?.databaseName
+    );
     const rootAlias = this.getRootAlias();
     const updateColumns = columns.map(
       (column) => `${rootAlias}.${column} as ${column}`
@@ -521,16 +523,17 @@ export class QuerySelectBuilderHelper<T extends Object> {
       .select(this.selectPrimaryKey(this.getRootAlias()))
       .addSelect(updateColumns)
       .getQueryAndParameters();
-    const setStr = columns
-      .map((column) => `${column} = ${fromAlias}.${column}`)
+    const setStr = columsMeta
+      .map((meta, i) => `${meta?.databaseName} = $${params.length + 1 + i}`)
       .join(", ");
+    const setParams = columsMeta.map((meta) => data?.[meta.propertyName]);
     const whereStr = this.joinByPrimaryKey(updateAlias, fromAlias);
     return [
       `UPDATE ${tableName} as ${updateAlias}
       SET ${setStr}
       FROM (${query}) as ${fromAlias}
       WHERE ${whereStr}`,
-      params,
+      [...params, ...setParams],
     ];
   }
 

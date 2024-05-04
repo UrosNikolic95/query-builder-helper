@@ -70,7 +70,7 @@ async function main() {
 
   console.log(qb.getUpdateQuery({ field: "abc" }));
 
-  const [query, params] = qb.getUpdateQuery({ field: "abc" });
+  const [query, params] = qb.getUpdateQuery({ field: "abc1", test_2_id: 0 });
 
   await qb.repo.query(query, params);
 
