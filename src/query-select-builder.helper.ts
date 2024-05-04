@@ -338,10 +338,6 @@ export class QuerySelectBuilderHelper<T extends Object> {
       this.conditions.push(root.getConditions());
   }
 
-  addExclude(conditions: Flatten<T>) {
-    this.exclude.addAnd(conditions);
-  }
-
   addConditionsRecursively(currentNode: NodeHelper) {
     return currentNode.keys.map((field) => {
       const nextNode = currentNode.getNext(field);
@@ -505,5 +501,37 @@ export class QuerySelectBuilderHelper<T extends Object> {
         nulls: order?.nulls,
       };
     });
+  }
+
+  getUpdateQuery(data: Partial<T>): [string, any[]] {
+    const tableName = this.repo.metadata.tableName;
+    const columns = Object.keys(data).filter((key) =>
+      this.repo.metadata.columns.find((column) => column.propertyName == key)
+    );
+    const rootAlias = this.getRootAlias();
+    const updateColumns = columns.map(
+      (column) => `${rootAlias}.${column} as ${column}`
+    );
+    const updateAlias = "update_table";
+    const fromAlias = "selected_table";
+    const [query, params] = this.getQueryBuilder()
+      .select(this.selectPrimaryKey(this.getRootAlias()))
+      .addSelect(updateColumns)
+      .getQueryAndParameters();
+    const setStr = columns
+      .map((key) => `${key} = ${fromAlias}.${key}`)
+      .join(", ");
+    const whereStr = this.joinByPrimaryKey(updateAlias, fromAlias);
+    return [
+      `UPDATE ${tableName} as ${updateAlias}
+      SET ${setStr}
+      FROM (${query}) as ${fromAlias}
+      WHERE ${whereStr}`,
+      params,
+    ];
+  }
+
+  update(data: Partial<T>) {
+    return this.repo.query(...this.getUpdateQuery(data));
   }
 }

@@ -40,7 +40,7 @@ async function main() {
     },
   });
 
-  qb.addExclude({
+  qb.exclude.addAnd({
     test_2: {
       test_1: {
         field: "abcd",
@@ -49,6 +49,7 @@ async function main() {
   });
 
   qb.addAnd({
+    id: 10,
     test_2: {
       field: Operator.IsNull(),
     },
@@ -63,9 +64,15 @@ async function main() {
     },
   ]);
 
+  console.log(qb.getQueryBuilder().getQuery());
+
   const data = await qb.getMany();
 
-  console.log(qb.getQueryBuilder().getQuery());
+  console.log(qb.getUpdateQuery({ field: "abc" }));
+
+  const [query, params] = qb.getUpdateQuery({ field: "abc" });
+
+  await qb.repo.query(query, params);
 
   console.log(data);
 
