@@ -36,6 +36,7 @@ async function main() {
 
   qb.addLeftJoinAnd({
     test_2: {
+      id: 1,
       field: "qqq",
     },
   });
@@ -49,9 +50,15 @@ async function main() {
   });
 
   qb.addAnd({
-    id: 10,
+    id: 20,
     test_2: {
       field: Operator.IsNull(),
+    },
+  });
+  qb.addAnd({
+    id: 22,
+    test_2: {
+      field: Operator.IsNotNull(),
     },
   });
   qb.addOrderBy([
@@ -64,7 +71,11 @@ async function main() {
     },
   ]);
 
-  console.log(qb.getQueryBuilder().getQuery());
+  qb.limit(111);
+
+  console.log(qb.variables);
+
+  console.log("::::", qb.getQueryBuilder().getQueryAndParameters());
 
   const data = await qb.getMany();
 

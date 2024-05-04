@@ -26,7 +26,10 @@ interface FunctionData {
   operator: "AND" | "OR";
   joinCondition: boolean;
   joinType: "left" | "inner";
-  conditions?: string[];
+  conditionsWhere?: string[];
+  conditionsJoin?: {
+    [alias: string]: string[];
+  };
 }
 
 export class Operator<T> {
@@ -117,7 +120,8 @@ class NodeHelper implements NodeData {
         operator: data?.operator,
         joinCondition: data?.joinCondition,
         joinType: data?.joinType,
-        conditions: [],
+        conditionsWhere: [],
+        conditionsJoin: {},
       },
     });
   }
@@ -142,7 +146,7 @@ class NodeHelper implements NodeData {
   }
 
   getNewVariableName() {
-    return this.functionData.queryBuilderHelper.getNewVariableName();
+    return this.functionData.queryBuilderHelper.variableHelper.getNewVariableName();
   }
 
   get keys() {
@@ -168,23 +172,19 @@ class NodeHelper implements NodeData {
     }
   }
 
-  addJoinConditions(joinConditions: string[]) {
-    const filteredJoinConditions = joinConditions?.filter((el) => el);
-    if (filteredJoinConditions?.length && this.functionData.joinCondition) {
-      if (filteredJoinConditions.length > 1) {
-        this.associations[this.alias].conditions.push(
-          "(" +
-            filteredJoinConditions.join(
-              " " + this.functionData.operator + " "
-            ) +
-            ")"
-        );
-      } else if (filteredJoinConditions.length == 1) {
-        this.associations[this.alias].conditions.push(
-          ...filteredJoinConditions
-        );
+  addJoinConditions() {
+    Object.keys(this.functionData.conditionsJoin).forEach((alias) => {
+      const strArr = this.functionData.conditionsJoin[alias];
+      if (strArr?.length && this.functionData.joinCondition) {
+        if (strArr.length > 1) {
+          this.associations[alias].conditions.push(
+            "(" + strArr.join(" " + this.functionData.operator + " ") + ")"
+          );
+        } else if (strArr.length == 1) {
+          this.associations[alias].conditions.push(...strArr);
+        }
       }
-    }
+    });
   }
 
   getOperator(currentValue: any) {
@@ -194,19 +194,38 @@ class NodeHelper implements NodeData {
 
   addCondition() {
     if (!this.currentValue) return null;
-    const variableName = this.getNewVariableName();
-    const op = this.getOperator(this.currentValue);
-    this.variables[variableName] = op?.value;
-    const cond = op.stringMaker(this.fieldAlias, variableName);
     if (!this.functionData?.joinCondition)
-      this.functionData.conditions.push(cond);
-    return cond;
+      return this.addWhereCondition(this.currentValue);
+    return this.addJoinCondition(this.currentValue);
+  }
+
+  getCondition(val: any) {
+    if (!val) return null;
+    const variableName = this.getNewVariableName();
+    const op = this.getOperator(val);
+    this.variables[variableName] = op?.value;
+    return op.stringMaker(this.fieldAlias, variableName);
+  }
+
+  addWhereCondition(val: any) {
+    const cond = this.getCondition(val);
+    if (!cond) return null;
+    this.functionData.conditionsWhere.push(cond);
+  }
+
+  addJoinCondition(val: any) {
+    if (!this.previousNode) return;
+    const cond = this.getCondition(val);
+    if (!cond) return null;
+    if (!this.functionData.conditionsJoin[this.previousNode.alias])
+      this.functionData.conditionsJoin[this.previousNode.alias] = [];
+    this.functionData.conditionsJoin[this.previousNode.alias].push(cond);
   }
 
   getConditions() {
     return (
       "(" +
-      this.functionData.conditions.join(
+      this.functionData.conditionsWhere.join(
         " " + this.functionData.operator + " "
       ) +
       ")"
@@ -228,13 +247,26 @@ function getPath<T>(get: (el: T) => any) {
   return str;
 }
 
-export class QuerySelectBuilderHelper<T extends Object> {
-  aliases: {
-    [key: string]: string;
-  } = {};
+// sub query has to share with original query
+class VariableHelper {
   variables: {
     [key: string]: any;
   } = {};
+  variableCounter: number = 0;
+  getNewVariableName() {
+    const i = this.variableCounter++;
+    return "v" + i;
+  }
+}
+
+export class QuerySelectBuilderHelper<T extends Object> {
+  variableHelper = new VariableHelper();
+  aliases: {
+    [key: string]: string;
+  } = {};
+  get variables() {
+    return this.variableHelper.variables;
+  }
   associations: {
     [alias: string]: {
       joinType: string;
@@ -243,12 +275,16 @@ export class QuerySelectBuilderHelper<T extends Object> {
       conditions?: string[];
     };
   } = {};
-  variableCounter: number = 0;
+  get variableCounter() {
+    return this.variableHelper.variableCounter;
+  }
   aliasCounter: number = 0;
   conditions: string[] = [];
   exclude_val: QuerySelectBuilderHelper<T> = null;
   skipField?: number;
+  offsetField?: number;
   takeField?: number;
+  limitField?: number;
   pageField?: number;
   order: {
     alias: string;
@@ -259,15 +295,13 @@ export class QuerySelectBuilderHelper<T extends Object> {
   get exclude() {
     if (!this.exclude_val) {
       this.exclude_val = new QuerySelectBuilderHelper(this.repo);
+      this.exclude_val.variableHelper = this.variableHelper;
     }
     return this.exclude_val;
   }
 
   constructor(readonly repo: Repository<T>) {}
 
-  getNewVariableName() {
-    return "v" + this.variableCounter++;
-  }
   getNewAlias(tableName?: string) {
     return [tableName, "alias", (this.aliasCounter++).toString()]
       .filter((el) => el)
@@ -280,8 +314,16 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return this.aliases[key];
   }
 
+  offset(num: number) {
+    this.offsetField = num;
+  }
+
   skip(num: number) {
     this.skipField = num;
+  }
+
+  limit(num: number) {
+    this.limitField = num;
   }
 
   take(num: number) {
@@ -308,7 +350,8 @@ export class QuerySelectBuilderHelper<T extends Object> {
       joinCondition: false,
     });
     this.addConditionsRecursively(root);
-    if (root?.functionData?.conditions?.length)
+    root.addJoinConditions();
+    if (root?.functionData?.conditionsWhere?.length)
       this.conditions.push(root.getConditions());
   }
 
@@ -321,7 +364,8 @@ export class QuerySelectBuilderHelper<T extends Object> {
       joinCondition: true,
     });
     this.addConditionsRecursively(root);
-    if (root?.functionData?.conditions?.length)
+    root.addJoinConditions();
+    if (root?.functionData?.conditionsWhere?.length)
       this.conditions.push(root.getConditions());
   }
 
@@ -334,7 +378,8 @@ export class QuerySelectBuilderHelper<T extends Object> {
       joinCondition: false,
     });
     this.addConditionsRecursively(root);
-    if (root?.functionData?.conditions?.length)
+    root.addJoinConditions();
+    if (root?.functionData?.conditionsWhere?.length)
       this.conditions.push(root.getConditions());
   }
 
@@ -343,10 +388,9 @@ export class QuerySelectBuilderHelper<T extends Object> {
       const nextNode = currentNode.getNext(field);
       if (nextNode.isRelation) {
         nextNode.addJoin();
-        const joinConditions = this.addConditionsRecursively(nextNode);
-        nextNode.addJoinConditions(joinConditions);
+        this.addConditionsRecursively(nextNode);
       } else {
-        return nextNode.addCondition();
+        nextNode.addCondition();
       }
     });
   }
@@ -412,10 +456,12 @@ export class QuerySelectBuilderHelper<T extends Object> {
   getQueryBuilder() {
     const rootAlias = this.getRootAlias();
     const qb = this.repo.createQueryBuilder(rootAlias);
-    this.fillQueryBuilder(qb);
     this.fillExclude(qb, rootAlias);
+    this.fillQueryBuilder(qb);
     if (this.skipField) return qb.skip(this.skipField);
+    if (this.offsetField) return qb.offset(this.offsetField);
     if (this.takeField) return qb.take(this.takeField);
+    if (this.limitField) return qb.limit(this.limitField);
     return qb;
   }
 
