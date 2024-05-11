@@ -10,7 +10,7 @@ interface NodeData {
   previousNode?: NodeData;
   currentValue?: any;
   currentPath: string[];
-  alias?: string;
+  relationAlias?: string;
   field?: string;
   isRelation?: boolean;
   isColumn?: boolean;
@@ -31,6 +31,8 @@ interface FunctionData {
     [alias: string]: string[];
   };
 }
+
+const mirrorField = "mirror";
 
 export class Operator<T> {
   constructor(
@@ -79,9 +81,9 @@ class NodeHelper implements NodeData {
   previousNode?: NodeData;
   currentValue?: any;
   currentPath: string[];
-  alias?: string;
-  fieldAlias?: string;
-  field?: string;
+  relationAlias?: string; // "alias"
+  fieldAlias?: string; // "previous_alias.field"
+  field?: string; // "field"
   isRelation?: boolean;
   isColumn?: boolean;
   isRoot?: boolean;
@@ -90,16 +92,26 @@ class NodeHelper implements NodeData {
 
   constructor(nodeData: NodeData) {
     Object.assign(this, nodeData);
-    this.alias =
-      !this.alias && (this.isRelation || this.isRoot)
-        ? nodeData.functionData.queryBuilderHelper.getAlias(
-            nodeData.currentPath,
+    this.getRelationAlias();
+    this.getFieldAlias();
+  }
+
+  getRelationAlias() {
+    if (this.relationAlias) return;
+    this.relationAlias =
+      this.isRelation || this.isRoot || this.getIsMirrorForField(this.field)
+        ? this.functionData.queryBuilderHelper.getAlias(
+            this.currentPath,
             this.entityMetadata.tableName
           )
         : null;
+  }
+
+  getFieldAlias() {
+    if (this.fieldAlias) return;
     this.fieldAlias =
-      !this.fieldAlias && this.previousNode?.alias && this.field
-        ? `${this.previousNode?.alias}.${this.field}`
+      this.previousNode?.relationAlias && this.field
+        ? `${this.previousNode?.relationAlias}.${this.field}`
         : null;
   }
 
@@ -126,6 +138,10 @@ class NodeHelper implements NodeData {
     });
   }
 
+  getIsMirrorForField(field: string) {
+    return this.isRoot && field == mirrorField;
+  }
+
   getNext(field: string) {
     return new NodeHelper({
       previousNode: this,
@@ -136,9 +152,10 @@ class NodeHelper implements NodeData {
       isColumn: Boolean(
         this.entityMetadata?.columns?.find((el) => el.propertyName == field)
       ),
-      isRelation: Boolean(
-        this.entityMetadata?.relations?.find((el) => el.propertyName == field)
-      ),
+      isRelation:
+        Boolean(
+          this.entityMetadata?.relations?.find((el) => el.propertyName == field)
+        ) || this.getIsMirrorForField(field),
       currentValue: this.currentValue?.[field],
       currentPath: [...this.currentPath, field],
       functionData: this.functionData,
@@ -162,10 +179,13 @@ class NodeHelper implements NodeData {
   }
 
   addJoin() {
-    if (!this.associations[this.alias]) {
-      this.associations[this.alias] = {
+    if (!this.associations[this.relationAlias]) {
+      this.associations[this.relationAlias] = {
+        entity: this.getIsMirrorForField(this.field)
+          ? this.functionData.queryBuilderHelper.repo.target
+          : null,
         association: this.fieldAlias,
-        alias: this.alias,
+        alias: this.relationAlias,
         joinType: this.functionData.joinType,
         conditions: [],
       };
@@ -217,9 +237,11 @@ class NodeHelper implements NodeData {
     if (!this.previousNode) return;
     const cond = this.getCondition(val);
     if (!cond) return null;
-    if (!this.functionData.conditionsJoin[this.previousNode.alias])
-      this.functionData.conditionsJoin[this.previousNode.alias] = [];
-    this.functionData.conditionsJoin[this.previousNode.alias].push(cond);
+    if (!this.functionData.conditionsJoin[this.previousNode.relationAlias])
+      this.functionData.conditionsJoin[this.previousNode.relationAlias] = [];
+    this.functionData.conditionsJoin[this.previousNode.relationAlias].push(
+      cond
+    );
   }
 
   getConditions() {
@@ -271,6 +293,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     [alias: string]: {
       joinType: string;
       association?: string;
+      entity: any;
       alias?: string;
       conditions?: string[];
     };
@@ -488,14 +511,32 @@ export class QuerySelectBuilderHelper<T extends Object> {
   fillQueryBuilder(qb: SelectQueryBuilder<T>) {
     Object.values(this.associations).forEach((associaation) => {
       if (associaation.joinType == "left") {
-        if (associaation.conditions.length) {
-          qb.leftJoinAndSelect(
-            associaation.association,
-            associaation.alias,
-            associaation.conditions.join(" OR ")
-          );
+        if (associaation.entity) {
+          if (associaation.conditions.length) {
+            qb.leftJoinAndSelect(
+              associaation.entity,
+              associaation.alias,
+              this.joinByPrimaryKey(associaation.alias, this.getRootAlias()) +
+                " AND " +
+                associaation.conditions.join(" OR ")
+            );
+          } else {
+            qb.leftJoinAndSelect(
+              associaation.entity,
+              associaation.alias,
+              this.joinByPrimaryKey(associaation.alias, this.getRootAlias())
+            );
+          }
         } else {
-          qb.leftJoinAndSelect(associaation.association, associaation.alias);
+          if (associaation.conditions.length) {
+            qb.leftJoinAndSelect(
+              associaation.association,
+              associaation.alias,
+              associaation.conditions.join(" OR ")
+            );
+          } else {
+            qb.leftJoinAndSelect(associaation.association, associaation.alias);
+          }
         }
       } else if (associaation.joinType == "inner") {
         if (associaation.conditions.length) {
