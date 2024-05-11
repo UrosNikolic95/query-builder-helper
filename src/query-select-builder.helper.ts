@@ -6,6 +6,15 @@ type T2<T> = {
   [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>>>;
 };
 
+type F2<T> = A2<A1<T>>;
+type A1<T> = T extends Array<infer V> ? A1<V> : T;
+type A2<T> = {
+  [key in keyof T]?: A2<A1<T[key]>>;
+};
+type T3<T1, T2> = {
+  [P1 in keyof T1]: (el: F2<T2> & { mirror: F2<T2> }) => T1[P1];
+};
+
 interface NodeData {
   previousNode?: NodeData;
   currentValue?: any;
@@ -17,6 +26,7 @@ interface NodeData {
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
   functionData?: FunctionData;
+  isMirrorField?: boolean;
   skip?: number;
   take?: number;
 }
@@ -88,6 +98,7 @@ class NodeHelper implements NodeData {
   isColumn?: boolean;
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
+  isMirrorField?: boolean;
   functionData: FunctionData;
 
   constructor(nodeData: NodeData) {
@@ -146,20 +157,27 @@ class NodeHelper implements NodeData {
     return new NodeHelper({
       previousNode: this,
       field,
-      entityMetadata: this.entityMetadata?.relations?.find(
-        (el) => el.propertyName == field
-      )?.inverseEntityMetadata,
+      isMirrorField: this.getIsMirrorForField(field),
+      entityMetadata: this.getIsMirrorForField(field)
+        ? this.entityMetadata
+        : this.entityMetadata?.relations?.find((el) => el.propertyName == field)
+            ?.inverseEntityMetadata,
       isColumn: Boolean(
         this.entityMetadata?.columns?.find((el) => el.propertyName == field)
       ),
-      isRelation:
-        Boolean(
-          this.entityMetadata?.relations?.find((el) => el.propertyName == field)
-        ) || this.getIsMirrorForField(field),
+      isRelation: this.getIsRelation(field),
       currentValue: this.currentValue?.[field],
       currentPath: [...this.currentPath, field],
       functionData: this.functionData,
     });
+  }
+
+  getIsRelation(field: string) {
+    return (
+      Boolean(
+        this.entityMetadata?.relations?.find((el) => el.propertyName == field)
+      ) || this.getIsMirrorForField(field)
+    );
   }
 
   getNewVariableName() {
@@ -181,7 +199,7 @@ class NodeHelper implements NodeData {
   addJoin() {
     if (!this.associations[this.relationAlias]) {
       this.associations[this.relationAlias] = {
-        entity: this.getIsMirrorForField(this.field)
+        entity: this.isMirrorField
           ? this.functionData.queryBuilderHelper.repo.target
           : null,
         association: this.fieldAlias,
@@ -281,6 +299,15 @@ class VariableHelper {
   }
 }
 
+interface IAssociation {
+  joinType: string;
+  association?: string;
+  entity: any;
+  alias?: string;
+  select?: boolean;
+  conditions?: string[];
+}
+
 export class QuerySelectBuilderHelper<T extends Object> {
   variableHelper = new VariableHelper();
   aliases: {
@@ -290,13 +317,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return this.variableHelper.variables;
   }
   associations: {
-    [alias: string]: {
-      joinType: string;
-      association?: string;
-      entity: any;
-      alias?: string;
-      conditions?: string[];
-    };
+    [alias: string]: IAssociation;
   } = {};
   get variableCounter() {
     return this.variableHelper.variableCounter;
@@ -314,6 +335,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     order?: "ASC" | "DESC";
     nulls?: "NULLS FIRST" | "NULLS LAST";
   }[] = [];
+  select?: string[] = [];
 
   get exclude() {
     if (!this.exclude_val) {
@@ -508,47 +530,140 @@ export class QuerySelectBuilderHelper<T extends Object> {
     };
   }
 
+  join(qb: SelectQueryBuilder<T>, association: IAssociation) {
+    const isLeftJoinType = association.joinType == "left";
+    const isInnerJoinType = association.joinType == "inner";
+    const isEntityJoin = Boolean(association.entity);
+    const hasConditions = Boolean(association.conditions.length);
+    const isSelect = association.select;
+
+    // left join and select
+
+    if (isLeftJoinType && isEntityJoin && hasConditions && isSelect)
+      return qb.leftJoinAndSelect(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
+          " AND " +
+          "(" +
+          association.conditions.join(" OR ") +
+          ")"
+      );
+
+    if (isLeftJoinType && isEntityJoin && !hasConditions && isSelect)
+      return qb.leftJoinAndSelect(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias())
+      );
+
+    if (isLeftJoinType && !isEntityJoin && hasConditions && isSelect)
+      return qb.leftJoinAndSelect(
+        association.association,
+        association.alias,
+        "(" + association.conditions.join(" OR ") + ")"
+      );
+
+    if (isLeftJoinType && !isEntityJoin && !hasConditions && isSelect)
+      return qb.leftJoinAndSelect(association.association, association.alias);
+
+    // left join no select
+
+    if (isLeftJoinType && isEntityJoin && hasConditions && !isSelect)
+      return qb.leftJoin(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
+          " AND " +
+          "(" +
+          association.conditions.join(" OR ") +
+          ")"
+      );
+
+    if (isLeftJoinType && isEntityJoin && !hasConditions && !isSelect)
+      return qb.leftJoin(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias())
+      );
+
+    if (isLeftJoinType && !isEntityJoin && hasConditions && !isSelect)
+      return qb.leftJoin(
+        association.association,
+        association.alias,
+        "(" + association.conditions.join(" OR ") + ")"
+      );
+
+    if (isLeftJoinType && !isEntityJoin && !hasConditions && !isSelect)
+      return qb.leftJoin(association.association, association.alias);
+
+    //-----------------------------------------------------------------------
+
+    // inner join and select
+
+    if (isInnerJoinType && isEntityJoin && hasConditions && isSelect)
+      return qb.innerJoinAndSelect(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
+          " AND " +
+          "(" +
+          association.conditions.join(" OR ") +
+          ")"
+      );
+
+    if (isInnerJoinType && isEntityJoin && !hasConditions && isSelect)
+      return qb.innerJoinAndSelect(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias())
+      );
+
+    if (isInnerJoinType && !isEntityJoin && hasConditions && isSelect)
+      return qb.innerJoinAndSelect(
+        association.association,
+        association.alias,
+        "(" + association.conditions.join(" OR ") + ")"
+      );
+
+    if (isInnerJoinType && !isEntityJoin && !hasConditions && isSelect)
+      return qb.innerJoinAndSelect(association.association, association.alias);
+
+    // inner join no select
+
+    if (isInnerJoinType && isEntityJoin && hasConditions && !isSelect)
+      return qb.innerJoin(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
+          " AND " +
+          "(" +
+          association.conditions.join(" OR ") +
+          ")"
+      );
+
+    if (isInnerJoinType && isEntityJoin && !hasConditions && !isSelect)
+      return qb.innerJoin(
+        association.entity,
+        association.alias,
+        this.joinByPrimaryKey(association.alias, this.getRootAlias())
+      );
+
+    if (isInnerJoinType && !isEntityJoin && hasConditions && !isSelect)
+      return qb.innerJoin(
+        association.association,
+        association.alias,
+        "(" + association.conditions.join(" OR ") + ")"
+      );
+
+    if (isInnerJoinType && !isEntityJoin && !hasConditions && !isSelect)
+      return qb.innerJoin(association.association, association.alias);
+  }
+
   fillQueryBuilder(qb: SelectQueryBuilder<T>) {
-    Object.values(this.associations).forEach((associaation) => {
-      if (associaation.joinType == "left") {
-        if (associaation.entity) {
-          if (associaation.conditions.length) {
-            qb.leftJoinAndSelect(
-              associaation.entity,
-              associaation.alias,
-              this.joinByPrimaryKey(associaation.alias, this.getRootAlias()) +
-                " AND " +
-                associaation.conditions.join(" OR ")
-            );
-          } else {
-            qb.leftJoinAndSelect(
-              associaation.entity,
-              associaation.alias,
-              this.joinByPrimaryKey(associaation.alias, this.getRootAlias())
-            );
-          }
-        } else {
-          if (associaation.conditions.length) {
-            qb.leftJoinAndSelect(
-              associaation.association,
-              associaation.alias,
-              associaation.conditions.join(" OR ")
-            );
-          } else {
-            qb.leftJoinAndSelect(associaation.association, associaation.alias);
-          }
-        }
-      } else if (associaation.joinType == "inner") {
-        if (associaation.conditions.length) {
-          qb.innerJoinAndSelect(
-            associaation.association,
-            associaation.alias,
-            associaation.conditions.join(" OR ")
-          );
-        } else {
-          qb.innerJoinAndSelect(associaation.association, associaation.alias);
-        }
-      }
+    if (this.select.length) qb.select(this.select);
+    Object.values(this.associations).forEach((association) => {
+      this.join(qb, association);
     });
     this.conditions.forEach((el) => {
       qb.andWhere(el);
@@ -581,12 +696,25 @@ export class QuerySelectBuilderHelper<T extends Object> {
       queryBuilderHelper: this,
     });
     this.order = data.map((order) => {
-      let node = this.returnLast(root, order.path);
+      const node = this.returnLast(root, order.path);
       return {
         alias: node.fieldAlias,
         order: order?.order,
         nulls: order?.nulls,
       };
+    });
+  }
+
+  rawQuery<result>(data: T3<result, T>) {
+    const root = NodeHelper.getRoot({
+      queryBuilderHelper: this,
+      operator: "AND",
+      joinType: "left",
+      joinCondition: false,
+    });
+    Object.keys(data).forEach((key) => {
+      const last = this.returnLast(root, data[key]);
+      this.select.push(`${last.fieldAlias} as ${key}`);
     });
   }
 
@@ -626,5 +754,13 @@ export class QuerySelectBuilderHelper<T extends Object> {
 
   update(data: Partial<T>) {
     return this.repo.query(...this.getUpdateQuery(data));
+  }
+}
+
+export class RawQueryHelper<T, result> {
+  qb: QuerySelectBuilderHelper<T> = null;
+  constructor(readonly repo: Repository<T>, data: T3<result, T>) {
+    this.qb = new QuerySelectBuilderHelper(repo);
+    this.qb.rawQuery(data);
   }
 }

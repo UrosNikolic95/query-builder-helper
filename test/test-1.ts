@@ -2,6 +2,7 @@ import { DataSource } from "typeorm";
 import {
   Operator,
   QuerySelectBuilderHelper,
+  RawQueryHelper,
 } from "../src/query-select-builder.helper";
 import { Test1Entity } from "./entities/test-1.entity";
 import { Test2Entity } from "./entities/test-2.entity";
@@ -79,13 +80,21 @@ async function main() {
 
   const data = await qb.getMany();
 
-  console.log(qb.getUpdateQuery({ field: "abc" }));
+  console.log(qb.getUpdateQuery({ field: "abc", test_2_id: 1 }));
 
-  const [query, params] = qb.getUpdateQuery({ field: "abc1", test_2_id: 0 });
+  const [query, params] = qb.getUpdateQuery({ field: "abc1", test_2_id: 1 });
 
   await qb.repo.query(query, params);
 
   console.log(data);
+
+  const d2 = new RawQueryHelper(qb.repo, {
+    v0: (el) => el.id,
+    v1: (el) => el.mirror.test_2.id,
+  });
+
+  console.log(d2.qb.getQueryBuilder().getQuery());
+  await qb.repo.query(...d2.qb.getQueryBuilder().getQueryAndParameters());
 
   await dataSource.destroy();
 }
