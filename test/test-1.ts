@@ -94,7 +94,7 @@ async function main() {
   });
 
   console.log(d2.qb.getQueryBuilder().getQuery());
-  await qb.repo.query(...d2.qb.getQueryBuilder().getQueryAndParameters());
+  await d2.getRawMany();
 
   await dataSource.destroy();
 }

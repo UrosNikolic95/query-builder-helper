@@ -335,7 +335,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     order?: "ASC" | "DESC";
     nulls?: "NULLS FIRST" | "NULLS LAST";
   }[] = [];
-  select?: string[] = [];
+  select?: { [key: string]: string } = {};
 
   get exclude() {
     if (!this.exclude_val) {
@@ -660,8 +660,14 @@ export class QuerySelectBuilderHelper<T extends Object> {
       return qb.innerJoin(association.association, association.alias);
   }
 
+  selectString() {
+    return Object.keys(this.select).map(
+      (key) => `${this.select[key]} as ${key}`
+    );
+  }
+
   fillQueryBuilder(qb: SelectQueryBuilder<T>) {
-    if (this.select.length) qb.select(this.select);
+    if (Object.keys(this.select).length) qb.select(this.selectString());
     Object.values(this.associations).forEach((association) => {
       this.join(qb, association);
     });
@@ -714,7 +720,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     });
     Object.keys(data).forEach((key) => {
       const last = this.returnLast(root, data[key]);
-      this.select.push(`${last.fieldAlias} as ${key}`);
+      this.select[key] = last.fieldAlias;
     });
   }
 
@@ -762,5 +768,9 @@ export class RawQueryHelper<T, result> {
   constructor(readonly repo: Repository<T>, data: T3<result, T>) {
     this.qb = new QuerySelectBuilderHelper(repo);
     this.qb.rawQuery(data);
+  }
+
+  getRawMany() {
+    return this.qb.getQueryBuilder().getRawMany<result>();
   }
 }
