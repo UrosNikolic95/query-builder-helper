@@ -33,9 +33,9 @@ interface NodeData {
 
 interface FunctionData {
   queryBuilderHelper: QuerySelectBuilderHelper<any>;
-  operator: "AND" | "OR";
-  joinCondition: boolean;
-  joinType: "left" | "inner";
+  operator?: "AND" | "OR";
+  joinCondition?: boolean;
+  joinType?: "left" | "inner";
   conditionsWhere?: string[];
   conditionsJoin?: {
     [alias: string]: string[];
@@ -324,7 +324,8 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
   aliasCounter: number = 0;
   conditions: string[] = [];
-  exclude_val: QuerySelectBuilderHelper<T> = null;
+  excludeVal: QuerySelectBuilderHelper<T> = null;
+  includeVal: QuerySelectBuilderHelper<T> = null;
   skipField?: number;
   offsetField?: number;
   takeField?: number;
@@ -338,11 +339,19 @@ export class QuerySelectBuilderHelper<T extends Object> {
   select?: { [key: string]: string } = {};
 
   get exclude() {
-    if (!this.exclude_val) {
-      this.exclude_val = new QuerySelectBuilderHelper(this.repo);
-      this.exclude_val.variableHelper = this.variableHelper;
+    if (!this.excludeVal) {
+      this.excludeVal = new QuerySelectBuilderHelper(this.repo);
+      this.excludeVal.variableHelper = this.variableHelper;
     }
-    return this.exclude_val;
+    return this.excludeVal;
+  }
+
+  get include() {
+    if (!this.includeVal) {
+      this.includeVal = new QuerySelectBuilderHelper(this.repo);
+      this.includeVal.variableHelper = this.variableHelper;
+    }
+    return this.includeVal;
   }
 
   constructor(readonly repo: Repository<T>) {}
@@ -481,7 +490,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
 
   fillExclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
-    if (!this.exclude_val) return;
+    if (!this.excludeVal) return;
     const excludedAlias = `excluded`;
     qb.leftJoin(
       (qb: SelectQueryBuilder<any>) => {
