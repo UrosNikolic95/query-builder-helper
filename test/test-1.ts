@@ -50,6 +50,14 @@ async function main() {
     },
   });
 
+  qb.include.addAnd({
+    test_2: {
+      test_1: {
+        field: "abcd",
+      },
+    },
+  });
+
   qb.addAnd({
     id: 20,
     test_2: {

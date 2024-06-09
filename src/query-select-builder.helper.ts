@@ -507,10 +507,28 @@ export class QuerySelectBuilderHelper<T extends Object> {
     qb.andWhere(this.primaryKeyIsNull(excludedAlias));
   }
 
+  fillInclude(qb: SelectQueryBuilder<T>, rootAlias: string) {
+    if (!this.includeVal) return;
+    const includeAlias = `included`;
+    qb.innerJoin(
+      (qb: SelectQueryBuilder<any>) => {
+        const rootAliasSubQuery = this.include.getRootAlias();
+        const qb2 = qb.from(this.repo.target, rootAliasSubQuery);
+        const helper = this.include.fillQueryBuilder(qb2);
+        helper.select(this.selectPrimaryKey(rootAliasSubQuery)); // remove previous select
+        helper.groupBy(this.groupByPrimaryKey(rootAliasSubQuery));
+        return helper;
+      },
+      includeAlias,
+      this.joinByPrimaryKey(includeAlias, rootAlias)
+    );
+  }
+
   getQueryBuilder() {
     const rootAlias = this.getRootAlias();
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillExclude(qb, rootAlias);
+    this.fillInclude(qb, rootAlias);
     this.fillQueryBuilder(qb);
     if (this.skipField) return qb.skip(this.skipField);
     if (this.offsetField) return qb.offset(this.offsetField);
