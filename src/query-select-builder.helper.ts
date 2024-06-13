@@ -321,6 +321,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     nulls?: "NULLS FIRST" | "NULLS LAST";
   }[] = [];
   select?: { [key: string]: string } = {};
+  distinctOn: string[];
 
   get exclude() {
     if (!this.excludeVal) {
@@ -514,10 +515,11 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.fillExclude(qb, rootAlias);
     this.fillInclude(qb, rootAlias);
     this.fillQueryBuilder(qb);
-    if (this.skipField) return qb.skip(this.skipField);
-    if (this.offsetField) return qb.offset(this.offsetField);
-    if (this.takeField) return qb.take(this.takeField);
-    if (this.limitField) return qb.limit(this.limitField);
+    if (this.skipField) qb.skip(this.skipField);
+    if (this.offsetField) qb.offset(this.offsetField);
+    if (this.takeField) qb.take(this.takeField);
+    if (this.limitField) qb.limit(this.limitField);
+    if (this.distinctOn) qb.distinctOn(this.distinctOn);
     return qb;
   }
 
@@ -706,6 +708,38 @@ export class RawQueryHelper<T, result> {
   constructor(readonly repo: Repository<T>, data: T3<result, T>) {
     this.qb = new QuerySelectBuilderHelper(repo);
     this.qb.rawQuery(data);
+  }
+
+  where(data: {
+    [key in keyof result]?: result[key] | Operator<result[key]>;
+  }) {
+    Object.keys(data).forEach((key) => {
+      const val = data[key];
+      const isOperator = val instanceof Operator;
+      const op = isOperator ? val : Operator.Equals(val);
+      const varName = this.qb.variableHelper.getNewVariableName();
+      if (op.value) this.qb.variables[varName] = val;
+      const cond = op.stringMaker(this.qb.select[key], varName);
+      this.qb.conditions.push(cond);
+    });
+    return this;
+  }
+
+  addOrder(data: { [key in keyof result]?: "ASC" | "DESC" }) {
+    Object.keys(data).forEach((key) => {
+      this.qb.order.push({
+        alias: this.qb.select[key],
+        order: data[key],
+      });
+    });
+    return this;
+  }
+
+  distinctOn(data: { [key in keyof result]?: boolean }) {
+    this.qb.distinctOn = Object.keys(data)
+      .filter((key) => data[key])
+      .map((key) => this.qb.select[key]);
+    return this;
   }
 
   getRawMany() {

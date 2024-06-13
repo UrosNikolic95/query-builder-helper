@@ -97,10 +97,22 @@ async function main() {
   console.log(data);
 
   const d2 = new RawQueryHelper(qb.repo, {
-    v0: (el) => el.id,
-    v1: (el) => el.test_2.id,
-  });
+    A1: (el) => el.id,
+    A2: (el) => el.test_2.id,
+  })
+    .where({
+      A1: 1,
+      A2: Operator.IsNotNull(),
+    })
+    .addOrder({
+      A1: "ASC",
+      A2: "DESC",
+    })
+    .distinctOn({
+      A1: true,
+    });
 
+  console.log(d2.qb.variables);
   console.log(d2.qb.getQueryBuilder().getQuery());
   await d2.getRawMany();
 
