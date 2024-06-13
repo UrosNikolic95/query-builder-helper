@@ -98,7 +98,7 @@ async function main() {
 
   const d2 = new RawQueryHelper(qb.repo, {
     v0: (el) => el.id,
-    v1: (el) => el.mirror.test_2.id,
+    v1: (el) => el.test_2.id,
   });
 
   console.log(d2.qb.getQueryBuilder().getQuery());

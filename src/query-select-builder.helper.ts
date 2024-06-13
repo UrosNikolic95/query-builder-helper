@@ -12,7 +12,7 @@ type A2<T> = {
   [key in keyof T]?: A2<A1<T[key]>>;
 };
 type T3<T1, T2> = {
-  [P1 in keyof T1]: (el: F2<T2> & { mirror: F2<T2> }) => T1[P1];
+  [P1 in keyof T1]: (el: F2<T2>) => T1[P1];
 };
 
 interface NodeData {
@@ -26,7 +26,6 @@ interface NodeData {
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
   functionData?: FunctionData;
-  isMirrorField?: boolean;
   skip?: number;
   take?: number;
 }
@@ -41,8 +40,6 @@ interface FunctionData {
     [alias: string]: string[];
   };
 }
-
-const mirrorField = "mirror";
 
 export class Operator<T> {
   constructor(
@@ -98,7 +95,6 @@ class NodeHelper implements NodeData {
   isColumn?: boolean;
   isRoot?: boolean;
   entityMetadata?: EntityMetadata;
-  isMirrorField?: boolean;
   functionData: FunctionData;
 
   constructor(nodeData: NodeData) {
@@ -110,7 +106,7 @@ class NodeHelper implements NodeData {
   getRelationAlias() {
     if (this.relationAlias) return;
     this.relationAlias =
-      this.isRelation || this.isRoot || this.getIsMirrorForField(this.field)
+      this.isRelation || this.isRoot
         ? this.functionData.queryBuilderHelper.getAlias(
             this.currentPath,
             this.entityMetadata.tableName
@@ -149,19 +145,13 @@ class NodeHelper implements NodeData {
     });
   }
 
-  getIsMirrorForField(field: string) {
-    return this.isRoot && field == mirrorField;
-  }
-
   getNext(field: string) {
     return new NodeHelper({
       previousNode: this,
       field,
-      isMirrorField: this.getIsMirrorForField(field),
-      entityMetadata: this.getIsMirrorForField(field)
-        ? this.entityMetadata
-        : this.entityMetadata?.relations?.find((el) => el.propertyName == field)
-            ?.inverseEntityMetadata,
+      entityMetadata: this.entityMetadata?.relations?.find(
+        (el) => el.propertyName == field
+      )?.inverseEntityMetadata,
       isColumn: Boolean(
         this.entityMetadata?.columns?.find((el) => el.propertyName == field)
       ),
@@ -173,10 +163,8 @@ class NodeHelper implements NodeData {
   }
 
   getIsRelation(field: string) {
-    return (
-      Boolean(
-        this.entityMetadata?.relations?.find((el) => el.propertyName == field)
-      ) || this.getIsMirrorForField(field)
+    return Boolean(
+      this.entityMetadata?.relations?.find((el) => el.propertyName == field)
     );
   }
 
@@ -199,9 +187,6 @@ class NodeHelper implements NodeData {
   addJoin() {
     if (!this.associations[this.relationAlias]) {
       this.associations[this.relationAlias] = {
-        entity: this.isMirrorField
-          ? this.functionData.queryBuilderHelper.repo.target
-          : null,
         association: this.fieldAlias,
         alias: this.relationAlias,
         joinType: this.functionData.joinType,
@@ -302,7 +287,6 @@ class VariableHelper {
 interface IAssociation {
   joinType: string;
   association?: string;
-  entity: any;
   alias?: string;
   select?: boolean;
   conditions?: string[];
@@ -560,130 +544,57 @@ export class QuerySelectBuilderHelper<T extends Object> {
   join(qb: SelectQueryBuilder<T>, association: IAssociation) {
     const isLeftJoinType = association.joinType == "left";
     const isInnerJoinType = association.joinType == "inner";
-    const isEntityJoin = Boolean(association.entity);
     const hasConditions = Boolean(association.conditions.length);
     const isSelect = association.select;
 
     // left join and select
 
-    if (isLeftJoinType && isEntityJoin && hasConditions && isSelect)
-      return qb.leftJoinAndSelect(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
-          " AND " +
-          "(" +
-          association.conditions.join(" OR ") +
-          ")"
-      );
-
-    if (isLeftJoinType && isEntityJoin && !hasConditions && isSelect)
-      return qb.leftJoinAndSelect(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias())
-      );
-
-    if (isLeftJoinType && !isEntityJoin && hasConditions && isSelect)
+    if (isLeftJoinType && hasConditions && isSelect)
       return qb.leftJoinAndSelect(
         association.association,
         association.alias,
         "(" + association.conditions.join(" OR ") + ")"
       );
 
-    if (isLeftJoinType && !isEntityJoin && !hasConditions && isSelect)
+    if (isLeftJoinType && !hasConditions && isSelect)
       return qb.leftJoinAndSelect(association.association, association.alias);
 
     // left join no select
 
-    if (isLeftJoinType && isEntityJoin && hasConditions && !isSelect)
-      return qb.leftJoin(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
-          " AND " +
-          "(" +
-          association.conditions.join(" OR ") +
-          ")"
-      );
-
-    if (isLeftJoinType && isEntityJoin && !hasConditions && !isSelect)
-      return qb.leftJoin(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias())
-      );
-
-    if (isLeftJoinType && !isEntityJoin && hasConditions && !isSelect)
+    if (isLeftJoinType && hasConditions && !isSelect)
       return qb.leftJoin(
         association.association,
         association.alias,
         "(" + association.conditions.join(" OR ") + ")"
       );
 
-    if (isLeftJoinType && !isEntityJoin && !hasConditions && !isSelect)
+    if (isLeftJoinType && !hasConditions && !isSelect)
       return qb.leftJoin(association.association, association.alias);
 
     //-----------------------------------------------------------------------
 
     // inner join and select
 
-    if (isInnerJoinType && isEntityJoin && hasConditions && isSelect)
-      return qb.innerJoinAndSelect(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
-          " AND " +
-          "(" +
-          association.conditions.join(" OR ") +
-          ")"
-      );
-
-    if (isInnerJoinType && isEntityJoin && !hasConditions && isSelect)
-      return qb.innerJoinAndSelect(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias())
-      );
-
-    if (isInnerJoinType && !isEntityJoin && hasConditions && isSelect)
+    if (isInnerJoinType && hasConditions && isSelect)
       return qb.innerJoinAndSelect(
         association.association,
         association.alias,
         "(" + association.conditions.join(" OR ") + ")"
       );
 
-    if (isInnerJoinType && !isEntityJoin && !hasConditions && isSelect)
+    if (isInnerJoinType && !hasConditions && isSelect)
       return qb.innerJoinAndSelect(association.association, association.alias);
 
     // inner join no select
 
-    if (isInnerJoinType && isEntityJoin && hasConditions && !isSelect)
-      return qb.innerJoin(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias()) +
-          " AND " +
-          "(" +
-          association.conditions.join(" OR ") +
-          ")"
-      );
-
-    if (isInnerJoinType && isEntityJoin && !hasConditions && !isSelect)
-      return qb.innerJoin(
-        association.entity,
-        association.alias,
-        this.joinByPrimaryKey(association.alias, this.getRootAlias())
-      );
-
-    if (isInnerJoinType && !isEntityJoin && hasConditions && !isSelect)
+    if (isInnerJoinType && hasConditions && !isSelect)
       return qb.innerJoin(
         association.association,
         association.alias,
         "(" + association.conditions.join(" OR ") + ")"
       );
 
-    if (isInnerJoinType && !isEntityJoin && !hasConditions && !isSelect)
+    if (isInnerJoinType && !hasConditions && !isSelect)
       return qb.innerJoin(association.association, association.alias);
   }
 
