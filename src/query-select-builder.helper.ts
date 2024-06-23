@@ -704,10 +704,10 @@ export class QuerySelectBuilderHelper<T extends Object> {
 }
 
 export class RawQueryHelper<T, result> {
-  qb: QuerySelectBuilderHelper<T> = null;
-  constructor(readonly repo: Repository<T>, data: T3<result, T>) {
-    this.qb = new QuerySelectBuilderHelper(repo);
-    this.qb.rawQuery(data);
+  helper: QuerySelectBuilderHelper<T> = null;
+  constructor(readonly data: { repo: Repository<T>; select: T3<result, T> }) {
+    this.helper = new QuerySelectBuilderHelper(data.repo);
+    this.helper.rawQuery(data.select);
   }
 
   where(data: {
@@ -717,18 +717,18 @@ export class RawQueryHelper<T, result> {
       const val = data[key];
       const isOperator = val instanceof Operator;
       const op = isOperator ? val : Operator.Equals(val);
-      const varName = this.qb.variableHelper.getNewVariableName();
-      if (op.value) this.qb.variables[varName] = val;
-      const cond = op.stringMaker(this.qb.select[key], varName);
-      this.qb.conditions.push(cond);
+      const varName = this.helper.variableHelper.getNewVariableName();
+      if (op.value) this.helper.variables[varName] = val;
+      const cond = op.stringMaker(this.helper.select[key], varName);
+      this.helper.conditions.push(cond);
     });
     return this;
   }
 
   addOrder(data: { [key in keyof result]?: "ASC" | "DESC" }) {
     Object.keys(data).forEach((key) => {
-      this.qb.order.push({
-        alias: this.qb.select[key],
+      this.helper.order.push({
+        alias: this.helper.select[key],
         order: data[key],
       });
     });
@@ -736,13 +736,13 @@ export class RawQueryHelper<T, result> {
   }
 
   distinctOn(data: { [key in keyof result]?: boolean }) {
-    this.qb.distinctOn = Object.keys(data)
+    this.helper.distinctOn = Object.keys(data)
       .filter((key) => data[key])
-      .map((key) => this.qb.select[key]);
+      .map((key) => this.helper.select[key]);
     return this;
   }
 
   getRawMany() {
-    return this.qb.getQueryBuilder().getRawMany<result>();
+    return this.helper.getQueryBuilder().getRawMany<result>();
   }
 }

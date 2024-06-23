@@ -96,9 +96,12 @@ async function main() {
 
   console.log(data);
 
-  const d2 = new RawQueryHelper(qb.repo, {
-    A1: (el) => el.id,
-    A2: (el) => el.test_2.id,
+  const d2 = new RawQueryHelper({
+    repo: qb.repo,
+    select: {
+      A1: (el) => el.id,
+      A2: (el) => el.test_2.id,
+    },
   })
     .where({
       A1: 1,
@@ -112,8 +115,8 @@ async function main() {
       A1: true,
     });
 
-  console.log(d2.qb.variables);
-  console.log(d2.qb.getQueryBuilder().getQuery());
+  console.log(d2.helper.variables);
+  console.log(d2.helper.getQueryBuilder().getQuery());
   await d2.getRawMany();
 
   await dataSource.destroy();
