@@ -11,7 +11,8 @@
   },
   "devDependencies": {},
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pp": "npx tsc && npm version patch && npm publish"
   },
   "repository": {
     "type": "git",
@@ -24,5 +25,8 @@
     "url": "https://github.com/UrosNikolic95/query-builder-helper/issues"
   },
   "homepage": "https://github.com/UrosNikolic95/query-builder-helper#readme",
-  "description": ""
+  "description": "",
+  "files": [
+    "dist/**/*"
+  ]
 }
