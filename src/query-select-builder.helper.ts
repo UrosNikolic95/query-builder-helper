@@ -11,7 +11,7 @@ type A1<T> = T extends Array<infer V> ? A1<V> : T;
 type A2<T> = {
   [key in keyof T]?: A2<A1<T[key]>>;
 };
-type T3<T1, T2> = {
+type Select<T1, T2> = {
   [P1 in keyof T1]: (el: F2<T2>) => T1[P1];
 };
 
@@ -224,8 +224,9 @@ class NodeHelper implements NodeData {
 
   getCondition(val: any) {
     if (!val) return null;
-    const variableName = this.getNewVariableName();
     const op = this.getOperator(val);
+    if (!op?.value) return null;
+    const variableName = this.getNewVariableName();
     this.variables[variableName] = op?.value;
     return op.stringMaker(this.fieldAlias, variableName);
   }
@@ -651,7 +652,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     });
   }
 
-  rawQuery<result>(data: T3<result, T>) {
+  rawQuery<result>(data: Select<result, T>) {
     const root = NodeHelper.getRoot({
       queryBuilderHelper: this,
       operator: "AND",
@@ -705,7 +706,9 @@ export class QuerySelectBuilderHelper<T extends Object> {
 
 export class RawQueryHelper<T, result> {
   helper: QuerySelectBuilderHelper<T> = null;
-  constructor(readonly data: { repo: Repository<T>; select: T3<result, T> }) {
+  constructor(
+    readonly data: { repo: Repository<T>; select: Select<result, T> }
+  ) {
     this.helper = new QuerySelectBuilderHelper(data.repo);
     this.helper.rawQuery(data.select);
   }
