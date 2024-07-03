@@ -1,5 +1,4 @@
 import { DataSource, SelectQueryBuilder } from "typeorm";
-import { QuerySelectBuilderHelper } from "../src/query-select-builder.helper";
 import { Test1Entity } from "./entities/test-1.entity";
 import { Test2Entity } from "./entities/test-2.entity";
 import { Test3Entity } from "./entities/test-3.entity";

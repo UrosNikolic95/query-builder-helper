@@ -261,7 +261,7 @@ class NodeHelper implements NodeData {
 
 const rootLabel = "root";
 
-function getPath<T>(get: (el: T) => any) {
+export function getPath<T>(get: (el: T) => any) {
   const str: string[] = [];
   const proxy = new Proxy({} as any, {
     get(obj, property: string, context) {
@@ -271,6 +271,55 @@ function getPath<T>(get: (el: T) => any) {
   });
   get(proxy);
   return str;
+}
+
+export function getFunctionParams(get: (el: any) => any) {
+  const res: {
+    functionParams: {};
+    path: string[];
+  } = {
+    functionParams: {},
+    path: [],
+  };
+  const proxy = new Proxy(
+    (...args: any[]) => {
+      const field = res.path[res.path.length - 1];
+      res.functionParams[field] = args;
+      return proxy;
+    },
+    {
+      get(obj, property: string, context) {
+        res.path.push(property);
+        return proxy;
+      },
+    }
+  );
+  get(proxy);
+  return res;
+}
+
+export function getFirstFunctionParams(get: (el: any) => any) {
+  const res: {
+    field: string;
+    params: any;
+  } = {
+    field: null,
+    params: null,
+  };
+  const proxy = new Proxy(
+    (...args: any[]) => {
+      if (!res?.params) res.params = args;
+      return proxy;
+    },
+    {
+      get(obj, property: string, context) {
+        if (!res?.field) res.field = property;
+        return proxy;
+      },
+    }
+  );
+  get(proxy);
+  return res;
 }
 
 // sub query has to share with original query
