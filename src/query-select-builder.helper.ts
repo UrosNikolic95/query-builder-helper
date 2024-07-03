@@ -1,18 +1,27 @@
 import { EntityMetadata, Repository, SelectQueryBuilder } from "typeorm";
 
-type Flatten<T> = T2<T1<T>>;
-type T1<T> = T extends Array<infer V> ? T1<V> : T;
-type T2<T> = {
-  [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>> | any>;
+type FlattenRecursive<T> = FlattenFields<FlattenArray<T>>;
+type FlattenArray<T> = T extends Array<infer V> ? FlattenArray<V> : T;
+type FlattenFields<T> = {
+  [key in keyof T]?: T[key] extends Date | number | boolean | string
+    ? T[key] | Operator<FlattenFields<FlattenArray<T[key] | null>>>
+    : FlattenFields<FlattenArray<T[key]>>;
 };
 
-type F2<T> = A2<A1<T>>;
-type A1<T> = T extends Array<infer V> ? A1<V> : T;
-type A2<T> = {
-  [key in keyof T]: A2<A1<T[key]>>;
+type SimpleFlatten<T> = SimpleFlattenFields<FlattenArray<T>>;
+type SimpleFlattenFields<T> = {
+  [key in keyof T]: SimpleFlattenFields<FlattenArray<T[key]>>;
 };
+
+type FlattenAndReplace<T1, T2> = FlattenAndReplaceFields<FlattenArray<T1>, T2>;
+type FlattenAndReplaceFields<T1, T2> = {
+  [key in keyof T1]?: T1[key] extends Date | number | boolean | string
+    ? T2
+    : FlattenAndReplaceFields<FlattenArray<T1[key]>, T2>;
+};
+
 type Select<T1, T2> = {
-  [P1 in keyof T1]: (el: F2<T2>) => T1[P1];
+  [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
 };
 
 interface NodeData {
@@ -409,7 +418,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     this.setSkip();
   }
 
-  addAnd(conditions: Flatten<T>) {
+  addAnd(conditions: FlattenRecursive<T>) {
     const root = NodeHelper.getRoot({
       currentValue: conditions,
       queryBuilderHelper: this,
@@ -423,7 +432,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
       this.conditions.push(root.getConditions());
   }
 
-  addLeftJoinAnd(conditions: Flatten<T>) {
+  addLeftJoinAnd(conditions: FlattenRecursive<T>) {
     const root = NodeHelper.getRoot({
       currentValue: conditions,
       queryBuilderHelper: this,
@@ -437,7 +446,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
       this.conditions.push(root.getConditions());
   }
 
-  addOr(conditions: Flatten<T>) {
+  addOr(conditions: FlattenRecursive<T>) {
     const root = NodeHelper.getRoot({
       currentValue: conditions,
       queryBuilderHelper: this,
