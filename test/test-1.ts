@@ -115,9 +115,10 @@ async function main() {
       A1: true,
     });
 
+  const data2 = await d2.getRawMany();
+
   console.log(d2.helper.variables);
   console.log(d2.helper.getQueryBuilder().getQuery());
-  await d2.getRawMany();
 
   await dataSource.destroy();
 }
