@@ -275,45 +275,24 @@ export function getPath<T>(get: (el: T) => any) {
 
 export function getFunctionParams(get: (el: any) => any) {
   const res: {
-    functionParams: {};
-    path: string[];
+    data: {
+      field: string;
+      params: any;
+    }[];
   } = {
-    functionParams: {},
-    path: [],
+    data: [],
   };
   const proxy = new Proxy(
     (...args: any[]) => {
-      const field = res.path[res.path.length - 1];
-      res.functionParams[field] = args;
+      res.data[res.data.length - 1].params = args;
       return proxy;
     },
     {
       get(obj, property: string, context) {
-        res.path.push(property);
-        return proxy;
-      },
-    }
-  );
-  get(proxy);
-  return res;
-}
-
-export function getFirstFunctionParams(get: (el: any) => any) {
-  const res: {
-    field: string;
-    params: any;
-  } = {
-    field: null,
-    params: null,
-  };
-  const proxy = new Proxy(
-    (...args: any[]) => {
-      if (!res?.params) res.params = args;
-      return proxy;
-    },
-    {
-      get(obj, property: string, context) {
-        if (!res?.field) res.field = property;
+        res.data.push({
+          field: property,
+          params: null,
+        });
         return proxy;
       },
     }
