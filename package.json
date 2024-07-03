@@ -1,6 +1,28 @@
 {
+  "name": "query-builder-helper-un95",
   "dependencies": {
     "pg": "^8.11.5",
     "typeorm": "^0.3.20"
-  }
+  },
+  "version": "1.0.0",
+  "main": "dist/query-select-builder.helper.js",
+  "directories": {
+    "test": "test"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UrosNikolic95/query-builder-helper.git"
+  },
+  "author": "UrosNikolic95",
+  "license": "MIT",
+  "types": "./dist\\query-select-builder.helper.d.ts",
+  "bugs": {
+    "url": "https://github.com/UrosNikolic95/query-builder-helper/issues"
+  },
+  "homepage": "https://github.com/UrosNikolic95/query-builder-helper#readme",
+  "description": ""
 }
