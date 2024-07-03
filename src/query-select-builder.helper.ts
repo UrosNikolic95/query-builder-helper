@@ -3,13 +3,13 @@ import { EntityMetadata, Repository, SelectQueryBuilder } from "typeorm";
 type Flatten<T> = T2<T1<T>>;
 type T1<T> = T extends Array<infer V> ? T1<V> : T;
 type T2<T> = {
-  [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>>>;
+  [key in keyof T]?: T2<T1<T[key]>> | Operator<T2<T1<T[key]>> | any>;
 };
 
 type F2<T> = A2<A1<T>>;
 type A1<T> = T extends Array<infer V> ? A1<V> : T;
 type A2<T> = {
-  [key in keyof T]?: A2<A1<T[key]>>;
+  [key in keyof T]: A2<A1<T[key]>>;
 };
 type Select<T1, T2> = {
   [P1 in keyof T1]: (el: F2<T2>) => T1[P1];
@@ -41,7 +41,7 @@ interface FunctionData {
   };
 }
 
-export class Operator<T> {
+export class Operator<T = any> {
   constructor(
     readonly value: T,
     readonly stringMaker: (fieldAlias: string, variableName: string) => string
@@ -714,7 +714,7 @@ export class RawQueryHelper<T, result> {
   }
 
   where(data: {
-    [key in keyof result]?: result[key] | Operator<result[key]>;
+    [key in keyof result]?: result[key] | Operator<result[key] | any>;
   }) {
     Object.keys(data).forEach((key) => {
       const val = data[key];
