@@ -24,6 +24,14 @@ type Select<T1, T2> = {
   [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
 };
 
+type GroupBy<T> = {
+  groupBy: SimpleFlatten<T>;
+  sum: SimpleFlatten<T>;
+  countAll: number;
+  countNotNull: SimpleFlatten<FlattenAndReplace<T, number>>;
+  rowNumber: number;
+};
+
 interface NodeData {
   previousNode?: NodeData;
   currentValue?: any;
