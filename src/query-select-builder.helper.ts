@@ -377,12 +377,20 @@ export class QuerySelectBuilderHelper<T extends Object> {
     return this.excludeVal;
   }
 
+  setExclude(queryBuilder: (el: QuerySelectBuilderHelper<T>) => void) {
+    queryBuilder(this.exclude);
+  }
+
   get include() {
     if (!this.includeVal) {
       this.includeVal = new QuerySelectBuilderHelper(this.repo);
       this.includeVal.variableHelper = this.variableHelper;
     }
     return this.includeVal;
+  }
+
+  setInclude(queryBuilder: (el: QuerySelectBuilderHelper<T>) => void) {
+    queryBuilder(this.include);
   }
 
   constructor(readonly repo: Repository<T>) {}

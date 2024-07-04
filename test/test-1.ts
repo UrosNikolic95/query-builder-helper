@@ -42,13 +42,15 @@ async function main() {
     },
   });
 
-  qb.exclude.addAnd({
-    test_2: {
-      test_1: {
-        field: "abcd",
+  qb.setExclude((excludeQuery) =>
+    excludeQuery.addAnd({
+      test_2: {
+        test_1: {
+          field: "abcd",
+        },
       },
-    },
-  });
+    })
+  );
 
   qb.include.addAnd({
     test_2: {
