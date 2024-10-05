@@ -24,6 +24,17 @@ type Select<T1, T2> = {
   [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
 };
 
+type SelectA<T> = {
+  entity: T;
+  duplicateEntity(join: any): T;
+  rowNumber(data: any): number;
+  sumConditions(data: any): number;
+};
+
+type SelectB<T1, T2> = {
+  [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
+};
+
 type GroupBy<T> = {
   groupBy: SimpleFlatten<T>;
   sum: SimpleFlatten<T>;
@@ -145,10 +156,11 @@ class NodeHelper implements NodeData {
     operator?: "AND" | "OR";
     joinType?: "left" | "inner";
     joinCondition?: boolean;
+    rootLabel?: string;
   }) {
     return new NodeHelper({
       currentValue: data.currentValue,
-      currentPath: [rootLabel],
+      currentPath: [data?.rootLabel || rootLabel],
       entityMetadata: data.queryBuilderHelper.repo.metadata,
       isRoot: true,
       functionData: {
@@ -778,6 +790,13 @@ export class RawQueryHelper<T, result> {
       const cond = op.stringMaker(this.helper.select[key], varName);
       this.helper.conditions.push(cond);
     });
+    return this;
+  }
+
+  whereInnerRelation(data: (el: { [key in keyof result]?: string }) => string) {
+    this.helper.conditions.push(
+      data(this.helper.select as { [key in keyof result]?: string })
+    );
     return this;
   }
 

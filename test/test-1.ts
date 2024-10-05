@@ -109,6 +109,7 @@ async function main() {
       A1: 1,
       A2: Operator.IsNotNull(),
     })
+    .whereInnerRelation(({ A1, A2 }) => `${A1} != ${A2}`)
     .addOrder({
       A1: "ASC",
       A2: "DESC",
