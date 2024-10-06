@@ -110,12 +110,17 @@ async function main() {
       A2: Operator.IsNotNull(),
     })
     .whereSqlString(({ A1, A2 }) => `${A1} != ${A2}`)
+    .groupBy({
+      a1: (el) => el.groupBy.A1,
+      b1: (el) => el.count,
+      b2: (el) => el.countDistinct.A1,
+      b3: (el) => el.sum.A1,
+    })
     .setOrder({
-      A1: "ASC",
-      A2: "DESC",
+      a1: "ASC",
     })
     .distinctOn({
-      A1: true,
+      a1: true,
     });
 
   const data2 = await d2.getRawMany();

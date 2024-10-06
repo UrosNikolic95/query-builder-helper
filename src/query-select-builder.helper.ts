@@ -573,9 +573,10 @@ export class QuerySelectBuilderHelper<T extends Object> {
   }
 
   fillGroupBy(qb: SelectQueryBuilder<T>) {
-    this.groupBy.forEach((key) => {
-      qb.addGroupBy(key);
-    });
+    if (this.groupBy)
+      this.groupBy.forEach((key) => {
+        qb.addGroupBy(key);
+      });
   }
 
   getQueryBuilder() {
@@ -826,11 +827,11 @@ export class RawQueryHelper<T, result> {
   groupBy<output>(data: GroupBy<result, output>) {
     const oldSelect = this.helper.select;
     this.helper.select = {};
+    this.helper.groupBy = [];
     Object.keys(data).forEach((key) => {
       const fields = getPath(data[key]);
       const f0 = fields?.[0];
       const f1 = oldSelect?.[fields?.[1]];
-      this.helper.groupBy = [];
       if (f0 == "groupBy") {
         this.helper.select[key] = f1;
         this.helper.groupBy.push(f1);
