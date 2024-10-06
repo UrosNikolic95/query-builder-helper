@@ -24,23 +24,19 @@ type Select<T1, T2> = {
   [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
 };
 
-type SelectA<T> = {
-  entity: T;
-  duplicateEntity(join: any): T;
-  rowNumber(data: any): number;
-  sumConditions(data: any): number;
+type KeysValue<KeysFrom, value> = {
+  [key in keyof KeysFrom]?: value;
 };
 
-type SelectB<T1, T2> = {
-  [P1 in keyof T1]: (el: SimpleFlatten<T2>) => T1[P1];
+type Transform<T> = {
+  groupBy: T;
+  sum: T;
+  count: number;
+  countDistinct: KeysValue<T, number>;
 };
 
-type GroupBy<T> = {
-  groupBy: SimpleFlatten<T>;
-  sum: SimpleFlatten<T>;
-  countAll: number;
-  countNotNull: SimpleFlatten<FlattenAndReplace<T, number>>;
-  rowNumber: number;
+type GroupBy<input, output> = {
+  [key in keyof output]: (el: Transform<input>) => output[key];
 };
 
 interface NodeData {
@@ -379,6 +375,7 @@ export class QuerySelectBuilderHelper<T extends Object> {
     nulls?: "NULLS FIRST" | "NULLS LAST";
   }[] = [];
   select?: { [key: string]: string } = {};
+  groupBy?: string[];
   distinctOn: string[];
 
   get exclude() {
@@ -575,12 +572,19 @@ export class QuerySelectBuilderHelper<T extends Object> {
     );
   }
 
+  fillGroupBy(qb: SelectQueryBuilder<T>) {
+    this.groupBy.forEach((key) => {
+      qb.addGroupBy(key);
+    });
+  }
+
   getQueryBuilder() {
     const rootAlias = this.getRootAlias();
     const qb = this.repo.createQueryBuilder(rootAlias);
     this.fillExclude(qb, rootAlias);
     this.fillInclude(qb, rootAlias);
     this.fillQueryBuilder(qb);
+    this.fillGroupBy(qb);
     if (this.skipField) qb.skip(this.skipField);
     if (this.offsetField) qb.offset(this.offsetField);
     if (this.takeField) qb.take(this.takeField);
@@ -793,20 +797,22 @@ export class RawQueryHelper<T, result> {
     return this;
   }
 
-  whereInnerRelation(data: (el: { [key in keyof result]?: string }) => string) {
+  whereSqlString(
+    data: (el: {
+      [key in keyof result]?: string;
+    }) => string
+  ) {
     this.helper.conditions.push(
       data(this.helper.select as { [key in keyof result]?: string })
     );
     return this;
   }
 
-  addOrder(data: { [key in keyof result]?: "ASC" | "DESC" }) {
-    Object.keys(data).forEach((key) => {
-      this.helper.order.push({
-        alias: this.helper.select[key],
-        order: data[key],
-      });
-    });
+  setOrder(data: { [key in keyof result]?: "ASC" | "DESC" }) {
+    this.helper.order = Object.keys(data).map((key) => ({
+      alias: this.helper.select[key],
+      order: data[key],
+    }));
     return this;
   }
 
@@ -815,6 +821,26 @@ export class RawQueryHelper<T, result> {
       .filter((key) => data[key])
       .map((key) => this.helper.select[key]);
     return this;
+  }
+
+  groupBy<output>(data: GroupBy<result, output>) {
+    const oldSelect = this.helper.select;
+    this.helper.select = {};
+    Object.keys(data).forEach((key) => {
+      const fields = getPath(data[key]);
+      const f0 = fields?.[0];
+      const f1 = oldSelect?.[fields?.[1]];
+      this.helper.groupBy = [];
+      if (f0 == "groupBy") {
+        this.helper.select[key] = f1;
+        this.helper.groupBy.push(f1);
+      }
+      if (f0 == "sum") this.helper.select[key] = `SUM(${f1})`;
+      if (f0 == "count") this.helper.select[key] = `COUNT(*)`;
+      if (f0 == "countDistinct")
+        this.helper.select[key] = `COUNT(DISTINCT(${f1}))`;
+    });
+    return this as any as RawQueryHelper<T, output>;
   }
 
   getRawMany() {
