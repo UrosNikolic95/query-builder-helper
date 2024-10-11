@@ -1,4 +1,10 @@
-import { EntityMetadata, Repository, SelectQueryBuilder } from "typeorm";
+import {
+  DataSource,
+  EntityMetadata,
+  EntityTarget,
+  Repository,
+  SelectQueryBuilder,
+} from "typeorm";
 
 type FlattenRecursive<T> = FlattenFields<FlattenArray<T>>;
 type FlattenArray<T> = T extends Array<infer V> ? FlattenArray<V> : T;
@@ -848,3 +854,111 @@ export class RawQueryHelper<T, result> {
     return this.helper.getQueryBuilder().getRawMany<result>();
   }
 }
+
+//-----------------------
+
+type JoinData<T1, T2> = {
+  type: "left" | "inner";
+  data: SelectedData<T1>;
+  on: {
+    [key2 in keyof T1]: (el: T2) => T1[key2];
+  };
+};
+
+type SelectExpression<input, output> = {
+  select: {
+    [key0 in keyof output]?: (el: input) => output[key0];
+  };
+  from: {
+    [key1 in keyof input]?: SelectedData<input[key1]>;
+  };
+  join: {
+    [key1 in keyof input]?: JoinData<input[key1], input>;
+  };
+  where: (el: input) => string;
+};
+
+function formatValue(val: any) {
+  if (val instanceof Date) return `'${val.toISOString()}'`;
+  if (typeof val == "string") return `'${val}'`;
+  if (val == null) return "NULL";
+  if (val == undefined) return "NULL";
+  return val;
+}
+
+export class SelectDataFactory {
+  constructor(readonly dataSource: DataSource) {}
+  expression<input, output>(
+    exp: SelectExpression<input, output>
+  ): SelectedData<output> {
+    const select = Object.keys(exp.select)
+      .map((alias) => getPath(exp.select[alias]).join(".") + " as " + alias)
+      .join(", ");
+    const fromKeys = Object.keys(exp.from);
+    if (fromKeys?.length > 1)
+      throw new Error("from field should not have more than one table");
+    if (fromKeys?.length == 0)
+      throw new Error("from field should not have zero tables");
+    const fromAlias = fromKeys[0];
+    const fromTable = exp.from[fromAlias] as SelectedData<any>;
+    const from = fromTable.subQuery() + " as " + fromAlias;
+    const joins = Object.keys(exp.join)
+      .map((alias) => {
+        const data = exp.join[alias] as JoinData<any, any>;
+        return `${
+          data.type
+        } join ${data.data.subQuery()} as ${alias} on ${Object.keys(data.on)
+          .map(
+            (field) =>
+              `${alias}.${field} = ${getPath(data.on[field]).join(".")}`
+          )
+          .join(" AND ")}`;
+      })
+      .join("");
+    const sql = `select ${select} from ${from} ${joins}`;
+    return new SelectedData<output>(this.dataSource, sql, "select");
+  }
+
+  values<T>(values: T[]) {
+    const columns = Object.keys(values);
+    const val = values
+      .map(
+        (row) =>
+          "(" +
+          columns.map((column) => formatValue(row[column])).join(", ") +
+          ")"
+      )
+      .join(", ");
+    const sql = `values ${val}`;
+    return new SelectedData<T>(this.dataSource, sql, "values");
+  }
+
+  entity<T>(entity: EntityTarget<T>) {
+    const tableName = this.dataSource.getMetadata(entity)?.tableName;
+    return new SelectedData<T>(this.dataSource, tableName, "table");
+  }
+}
+
+export class SelectedData<T> {
+  constructor(
+    readonly dataSource: DataSource,
+    readonly sql: string,
+    readonly type?: "table" | "values" | "select"
+  ) {}
+
+  async getData(): Promise<T[]> {
+    if (this.type == "table")
+      return this.dataSource.query(`select * from ${this.sql}`);
+    return this.dataSource.query(this.sql);
+  }
+
+  toString() {
+    return this.sql;
+  }
+
+  subQuery() {
+    return this.type == "table" ? this.sql : `(${this.sql})`;
+  }
+}
+
+//-----------------------
