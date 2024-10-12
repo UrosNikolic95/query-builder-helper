@@ -861,21 +861,31 @@ type JoinData<T1, T2> = {
   type: "left" | "inner";
   data: SelectedData<T1>;
   on: {
-    [key2 in keyof T1]: (el: T2) => T1[key2];
+    [key2 in keyof T1]?: (el: T2) => T1[key2];
   };
 };
 
-type SelectExpression<input, output> = {
+type SelectExpression<from, joins, output> = {
   select: {
-    [key0 in keyof output]?: (el: input) => output[key0];
+    [key in keyof output]?: (el: from & joins) => output[key];
   };
   from: {
-    [key1 in keyof input]?: SelectedData<input[key1]>;
+    [key in keyof from]?: SelectedData<from[key]>;
   };
-  join: {
-    [key1 in keyof input]?: JoinData<input[key1], input>;
+  join?: {
+    [key in keyof joins]?: JoinData<joins[key], from & joins>;
   };
-  where: (el: input) => string;
+  where?: (el: from & joins) => string;
+  orderBy?: {
+    column: (el: from & joins) => any;
+    direction?: "ACS" | "DESC";
+    null?: "NULLS LAST" | "NULLS FIRST";
+  }[];
+  groupBy?: {
+    [key in keyof output]?: boolean;
+  };
+  limit?: number;
+  offset?: number;
 };
 
 function formatValue(val: any) {
@@ -888,9 +898,9 @@ function formatValue(val: any) {
 
 export class SelectDataFactory {
   constructor(readonly dataSource: DataSource) {}
-  expression<input, output>(
-    exp: SelectExpression<input, output>
-  ): SelectedData<output> {
+  expression<fromT, joinsT, outputT>(
+    exp: SelectExpression<fromT, joinsT, outputT>
+  ): SelectedData<outputT> {
     const select = Object.keys(exp.select)
       .map((alias) => getPath(exp.select[alias]).join(".") + " as " + alias)
       .join(", ");
@@ -901,13 +911,15 @@ export class SelectDataFactory {
       throw new Error("from field should not have zero tables");
     const fromAlias = fromKeys[0];
     const fromTable = exp.from[fromAlias] as SelectedData<any>;
-    const from = fromTable.subQuery() + " as " + fromAlias;
+    const columns = fromTable?.data?.columns || ``;
+    const from = fromTable.subQuery() + " as " + fromAlias + columns;
     const joins = Object.keys(exp.join)
       .map((alias) => {
         const data = exp.join[alias] as JoinData<any, any>;
-        return `${
-          data.type
-        } join ${data.data.subQuery()} as ${alias} on ${Object.keys(data.on)
+        const columns = data?.data?.data?.columns || ``;
+        return `${data.type} join ${data.data.subQuery()} as ${
+          alias + columns
+        } on ${Object.keys(data.on)
           .map(
             (field) =>
               `${alias}.${field} = ${getPath(data.on[field]).join(".")}`
@@ -916,11 +928,15 @@ export class SelectDataFactory {
       })
       .join("");
     const sql = `select ${select} from ${from} ${joins}`;
-    return new SelectedData<output>(this.dataSource, sql, "select");
+    return new SelectedData<outputT>({
+      dataSource: this.dataSource,
+      dataSql: sql,
+      subQuerySql: `(${sql})`,
+    });
   }
 
   values<T>(values: T[]) {
-    const columns = Object.keys(values);
+    const columns = Object.keys(values?.[0]);
     const val = values
       .map(
         (row) =>
@@ -930,34 +946,44 @@ export class SelectDataFactory {
       )
       .join(", ");
     const sql = `values ${val}`;
-    return new SelectedData<T>(this.dataSource, sql, "values");
+    return new SelectedData<T>({
+      dataSource: this.dataSource,
+      dataSql: sql,
+      subQuerySql: `(${sql})`,
+      columns: "(" + columns.join(",") + ")",
+    });
   }
 
   entity<T>(entity: EntityTarget<T>) {
     const tableName = this.dataSource.getMetadata(entity)?.tableName;
-    return new SelectedData<T>(this.dataSource, tableName, "table");
+    return new SelectedData<T>({
+      dataSource: this.dataSource,
+      dataSql: `select * from ${tableName}`,
+      subQuerySql: tableName,
+    });
   }
 }
 
 export class SelectedData<T> {
   constructor(
-    readonly dataSource: DataSource,
-    readonly sql: string,
-    readonly type?: "table" | "values" | "select"
+    readonly data: {
+      dataSource: DataSource;
+      dataSql: string;
+      subQuerySql: string;
+      columns?: string;
+    }
   ) {}
 
   async getData(): Promise<T[]> {
-    if (this.type == "table")
-      return this.dataSource.query(`select * from ${this.sql}`);
-    return this.dataSource.query(this.sql);
+    return this.data.dataSource.query(this.data.dataSql);
   }
 
-  toString() {
-    return this.sql;
+  dataSql() {
+    return this.data.dataSql;
   }
 
   subQuery() {
-    return this.type == "table" ? this.sql : `(${this.sql})`;
+    return this.data.subQuerySql;
   }
 }
 
