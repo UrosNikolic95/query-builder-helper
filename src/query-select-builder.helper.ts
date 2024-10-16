@@ -927,7 +927,9 @@ export class SelectDataFactory {
           .join(" AND ")}`;
       })
       .join("");
-    const sql = `select ${select} from ${from} ${joins}`;
+    const limit = exp.limit ? `limit ${exp.limit}` : "";
+    const offset = exp.offset ? `offset ${exp.offset}` : "";
+    const sql = `select ${select} from ${from} ${joins} ${offset} ${limit}`;
     return new SelectedData<outputT>({
       dataSource: this.dataSource,
       dataSql: sql,

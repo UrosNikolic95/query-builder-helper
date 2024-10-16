@@ -44,6 +44,8 @@ async function main() {
       },
     },
     where: (el) => `${el.t1.id} = ${el.t2.id}`,
+    offset: 1,
+    limit: 1,
   });
 
   const d = await e.getData();
