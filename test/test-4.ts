@@ -44,6 +44,21 @@ async function main() {
       },
     },
     where: (el) => `${el.t1.id} = ${el.t2.id}`,
+    orderBy: [
+      {
+        column: (el) => el.t1.id,
+        direction: "ASC",
+        null: "NULLS FIRST",
+      },
+      {
+        column: (el) => el.t1.val,
+        direction: "DESC",
+        null: "NULLS LAST",
+      },
+      {
+        column: (el) => el.t2.test_2_id,
+      },
+    ],
     offset: 1,
     limit: 1,
   });

@@ -878,7 +878,7 @@ type SelectExpression<from, joins, output> = {
   where?: (el: from & joins) => string;
   orderBy?: {
     column: (el: from & joins) => any;
-    direction?: "ACS" | "DESC";
+    direction?: "ASC" | "DESC";
     null?: "NULLS LAST" | "NULLS FIRST";
   }[];
   groupBy?: {
@@ -927,9 +927,17 @@ export class SelectDataFactory {
           .join(" AND ")}`;
       })
       .join("");
+    const orderColumns = exp.orderBy
+      .map((el) =>
+        [getPath(el.column).join("."), el.direction, el.null]
+          .filter((el) => el)
+          .join(" ")
+      )
+      .join(", ");
+    const order = orderColumns ? `order by ${orderColumns}` : "";
     const limit = exp.limit ? `limit ${exp.limit}` : "";
     const offset = exp.offset ? `offset ${exp.offset}` : "";
-    const sql = `select ${select} from ${from} ${joins} ${offset} ${limit}`;
+    const sql = `select ${select} from ${from} ${joins} ${order} ${offset} ${limit}`;
     return new SelectedData<outputT>({
       dataSource: this.dataSource,
       dataSql: sql,
