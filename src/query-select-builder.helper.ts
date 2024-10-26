@@ -5,6 +5,7 @@ import {
   Repository,
   SelectQueryBuilder,
 } from "typeorm";
+import { Alias } from "typeorm/query-builder/Alias";
 
 type FlattenRecursive<T> = FlattenFields<FlattenArray<T>>;
 type FlattenArray<T> = T extends Array<infer V> ? FlattenArray<V> : T;
@@ -921,15 +922,13 @@ export class SelectDataFactory {
       throw new Error("from field should not have zero tables");
     const fromAlias = fromKeys[0];
     const fromTable = exp.from[fromAlias] as SelectedData<any>;
-    const columns = fromTable?.data?.columns || ``;
-    const from = fromTable.subQuery() + " as " + fromAlias + columns;
+    const from = fromTable.subQuery(fromAlias);
     const joins = Object.keys(exp.join)
       .map((alias) => {
         const data = exp.join[alias] as JoinData<any, any>;
-        const columns = data?.data?.data?.columns || ``;
-        return `${data.type} join ${data.data.subQuery()} as ${
-          alias + columns
-        } on ${Object.keys(data.on)
+        return `${data.type} join ${data.data.subQuery(alias)} on ${Object.keys(
+          data.on
+        )
           .map(
             (field) =>
               `${alias}.${field} = ${getPath(data.on[field]).join(".")}`
@@ -951,11 +950,11 @@ export class SelectDataFactory {
     return new SelectedData<outputT>({
       dataSource: this.dataSource,
       dataSql: sql,
-      subQuerySql: `(${sql})`,
     });
   }
 
   values<T>(values: T[]) {
+    if (!values.length) throw new Error("Values paramerer cannot be empty.");
     const columns = Object.keys(values?.[0]);
     const val = values
       .map(
@@ -969,8 +968,7 @@ export class SelectDataFactory {
     return new SelectedData<T>({
       dataSource: this.dataSource,
       dataSql: sql,
-      subQuerySql: `(${sql})`,
-      columns: "(" + columns.join(",") + ")",
+      valuesColumns: "(" + columns.join(",") + ")",
     });
   }
 
@@ -978,8 +976,26 @@ export class SelectDataFactory {
     const tableName = this.dataSource.getMetadata(entity)?.tableName;
     return new SelectedData<T>({
       dataSource: this.dataSource,
-      dataSql: `select * from ${tableName}`,
-      subQuerySql: tableName,
+      dataSql: `select * from "${tableName}"`,
+      subQuerySql: `"${tableName}"`,
+    });
+  }
+
+  rawQuery<T, result>({
+    entity,
+    select,
+  }: {
+    entity: EntityTarget<T>;
+    select: Select<result, T>;
+  }) {
+    const q = new RawQueryHelper({
+      repo: this.dataSource.getRepository(entity),
+      select,
+    });
+    const sql = q.helper.getFilledQuery();
+    return new SelectedData({
+      dataSource: this.dataSource,
+      dataSql: sql,
     });
   }
 }
@@ -989,8 +1005,8 @@ export class SelectedData<T> {
     readonly data: {
       dataSource: DataSource;
       dataSql: string;
-      subQuerySql: string;
-      columns?: string;
+      subQuerySql?: string;
+      valuesColumns?: string;
     }
   ) {}
 
@@ -1002,8 +1018,10 @@ export class SelectedData<T> {
     return this.data.dataSql;
   }
 
-  subQuery() {
-    return this.data.subQuerySql;
+  subQuery(alias: string) {
+    return this.data.subQuerySql
+      ? `${this.data.subQuerySql} as ${alias}`
+      : `(${this.data.dataSql}) as ${alias + this.data.valuesColumns}`;
   }
 }
 
