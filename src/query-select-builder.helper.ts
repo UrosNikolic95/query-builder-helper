@@ -775,6 +775,14 @@ export class QuerySelectBuilderHelper<T extends Object> {
     ];
   }
 
+  getFilledQuery() {
+    const [query, parameters] = this.getQueryBuilder().getQueryAndParameters();
+    return parameters.reduce(
+      (red: string, val, i) => red.replace(`$${i + 1}`, formatValue(val)),
+      query
+    );
+  }
+
   update(data: Partial<T>) {
     return this.repo.query(...this.getUpdateQuery(data));
   }
@@ -849,6 +857,8 @@ export class RawQueryHelper<T, result> {
     });
     return this as any as RawQueryHelper<T, output>;
   }
+
+  getFilledQuery() {}
 
   getRawMany() {
     return this.helper.getQueryBuilder().getRawMany<result>();
